@@ -1,3 +1,5 @@
+use snowpipe_streaming::StreamingIngestClient;
+
 fn main() {
     let max_rows = 100_000;
     let poll_attempts = 30;
@@ -5,13 +7,13 @@ fn main() {
 
     // Create Snowflake Streaming Ingest Client
     let uuid = uuid();
-    client = StreamingIngestClient::new(
+    let client = StreamingIngestClient::<Row>::new(
         client_name = format!("MY_CLIENT_{uuid}"),
         db_name = "MY_DATABASE",
         schema_name = "MY_SCHEMA",
         pipe_name = "MY_PIPE",
         profile_json = "profile.json", //depends on your folder structure
-    );
+    ).await.expect("failed to create client");
 
     // Open a channel for data ingestion
     let channel_uuid = uuid();

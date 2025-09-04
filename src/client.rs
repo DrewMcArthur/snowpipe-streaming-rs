@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use reqwest::Client;
 use serde::Serialize;
 
-use crate::channel::StreamingIngestChannel;
+use crate::{channel::StreamingIngestChannel, config::read_config, errors::Error};
 
 #[derive(Clone)]
 pub struct StreamingIngestClient<R> {
@@ -25,9 +25,10 @@ impl<R: Serialize+Clone> StreamingIngestClient<R> {
         schema_name: &str,
         pipe_name: &str,
         profile_json: &str,
-    ) -> Self {
-        let account = "ACCOUNT".to_string(); // from profile.json
-        let control_host = format!("{account}.snowflakecomputing.com");
+    ) -> Result<Self, Error> {
+        let config = read_config(profile_json)?;
+        let account = config.account;
+        let control_host = config.url;
         let mut client = StreamingIngestClient {
             _marker: PhantomData,
             db_name: db_name.to_string(),
@@ -39,9 +40,14 @@ impl<R: Serialize+Clone> StreamingIngestClient<R> {
             ingest_host: None,
             scoped_token: None,
         };
+        client.fetch_jwt().await.expect("Failed to fetch JWT");
         client.discover_ingest_host().await.expect("Failed to discover ingest host");
         client.get_scoped_token().await.expect("Failed to get scoped token");
-        client
+        Ok(client)
+    }
+
+    async fn fetch_jwt(&mut self) -> Result<(), Error> {
+        todo!();
     }
 
     async fn discover_ingest_host(&mut self) -> Result<(), reqwest::Error> {

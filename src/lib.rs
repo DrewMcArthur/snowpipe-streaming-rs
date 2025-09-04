@@ -1,11 +1,16 @@
-mod client;
 mod channel;
+mod client;
+mod config;
+mod errors;
 mod types;
 
+pub use channel::StreamingIngestChannel;
 pub use client::StreamingIngestClient;
 
 #[cfg(test)]
 mod tests {
+    use jiff::Zoned;
+
     use super::*;
 
     #[tokio::test]
@@ -14,7 +19,7 @@ mod tests {
         struct RowType {
             id: u64,
             data: String,
-            dt: DateTime
+            dt: Zoned,
         }
 
         let client = StreamingIngestClient::<RowType>::new(
@@ -23,17 +28,25 @@ mod tests {
             "my_schema",
             "my_pipe",
             "{}",
-        ).await;
-        let channel = client.open_channel("my_channel").await.expect("Failed to open channel");
+        )
+        .await
+        .expect("Failed to create client");
+        let mut channel = client
+            .open_channel("my_channel")
+            .await
+            .expect("Failed to open channel");
         let mut i = 1;
         while i < 1000 {
-            channel.append_row(&RowType {
-                id: i,
-                data: "some data".to_string(),
-                dt: DateTime::now()
-            }).await.expect("Failed to append row");
+            channel
+                .append_row(&RowType {
+                    id: i,
+                    data: "some data".to_string(),
+                    dt: Zoned::now(),
+                })
+                .await
+                .expect("Failed to append row");
             i += 1;
         }
-        channel.close();
+        channel.close().await;
     }
 }
