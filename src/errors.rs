@@ -2,6 +2,7 @@
 pub enum Error {
     Io(std::io::Error),
     Json(serde_json::Error),
+    Http(reqwest::Error),
 }
 
 impl From<std::io::Error> for Error {
@@ -13,5 +14,11 @@ impl From<std::io::Error> for Error {
 impl From<serde_json::Error> for Error {
     fn from(err: serde_json::Error) -> Self {
         Error::Json(err)
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(err: reqwest::Error) -> Self {
+        Error::Http(err)
     }
 }

@@ -29,6 +29,7 @@ impl<R: Serialize+Clone> StreamingIngestClient<R> {
         let config = read_config(profile_json)?;
         let account = config.account;
         let control_host = config.url;
+        // TODO: validate control host is a valid URL
         let mut client = StreamingIngestClient {
             _marker: PhantomData,
             db_name: db_name.to_string(),
@@ -49,9 +50,9 @@ impl<R: Serialize+Clone> StreamingIngestClient<R> {
         todo!("Implement JWT fetching from SnowSQL or other source");
     }
 
-    async fn discover_ingest_host(&mut self) -> Result<(), reqwest::Error> {
+    async fn discover_ingest_host(&mut self) -> Result<(), Error> {
         let control_host = self.control_host.as_str(); 
-        let url = format!("https://{control_host}/v2/streaming/hostname");
+        let url = format!("{control_host}/v2/streaming/hostname");
         // TODO: pick up from where left off, read JWT from snowsql and private key
         // https://github.com/sfc-gh-chathomas/snowpipe-streaming-examples/tree/main/REST#step-1-discover-ingest-host
         let client = Client::new();
@@ -67,9 +68,10 @@ impl<R: Serialize+Clone> StreamingIngestClient<R> {
         Ok(())
     }
 
-    async fn get_scoped_token(&mut self) -> Result<(), reqwest::Error> {
+    async fn get_scoped_token(&mut self) -> Result<(), Error> {
+        // remove protocol from str
         let control_host = self.control_host.as_str();
-        let url = format!("https://{control_host}/oauth/token");
+        let url = format!("{control_host}/oauth/token");
         let client = Client::new();
         let resp = client.post(&url)
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -81,7 +83,7 @@ impl<R: Serialize+Clone> StreamingIngestClient<R> {
         Ok(())
     }
 
-    pub async fn open_channel(&self, channel_name: &str) -> Result<StreamingIngestChannel<R>, reqwest::Error> {
+    pub async fn open_channel(&self, channel_name: &str) -> Result<StreamingIngestChannel<R>, Error> {
         let ingest_host = self.ingest_host.as_ref().expect("Ingest host not set");
         let db = self.db_name.as_str();
         let schema = self.schema_name.as_str();

@@ -2,8 +2,7 @@ use reqwest::Client;
 use serde::Serialize;
 
 use crate::{
-    StreamingIngestClient,
-    types::{ChannelStatus, OpenChannelResponse},
+    types::{ChannelStatus, OpenChannelResponse}, Error, StreamingIngestClient
 };
 
 pub struct StreamingIngestChannel<R> {
@@ -32,7 +31,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
     }
 
     /// TODO: can use the same POST to send multiple newline-delimited rows in the body
-    pub async fn append_row(&mut self, row: &R) -> Result<(), reqwest::Error> {
+    pub async fn append_row(&mut self, row: &R) -> Result<(), Error> {
         let offset = self.last_pushed_offset_token + 1;
         let url = format!(
             "https://{}/v2/streaming/data/databases/{}/schemas/{}/pipes/{}/channels/{}/rows?continuationToken={}&offsetToken={}",
@@ -81,7 +80,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
         self.last_committed_offset_token
     }
 
-    async fn get_channel_status(&mut self) -> Result<(), reqwest::Error> {
+    async fn get_channel_status(&mut self) -> Result<(), Error> {
         let client = Client::new();
         let url = format!(
             "https://{}/v2/streaming/databases/{}/schemas/{}/pipes/{}:bulk-channel-status",

@@ -6,6 +6,7 @@ mod types;
 
 pub use channel::StreamingIngestChannel;
 pub use client::StreamingIngestClient;
+pub use errors::Error;
 
 #[cfg(test)]
 mod tests {
