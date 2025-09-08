@@ -8,6 +8,7 @@ pub struct Config {
     pub account: String,
     pub url: String,
     pub private_key: String,
+    pub jwt_token: String,
 }
 
 pub(crate) fn read_config(path: &str) -> Result<Config, Error> {

@@ -13,7 +13,7 @@ pub struct StreamingIngestClient<R> {
     pub pipe_name: String,
     pub account: String,
     control_host: String,
-    jwt: Option<String>,
+    jwt_token: String,
     pub ingest_host: Option<String>,
     pub scoped_token: Option<String>,
 }
@@ -35,19 +35,18 @@ impl<R: Serialize+Clone> StreamingIngestClient<R> {
             schema_name: schema_name.to_string(),
             pipe_name: pipe_name.to_string(),
             account,
-            control_host, 
-            jwt: None,
+            control_host,
+            jwt_token: config.jwt_token,
             ingest_host: None,
             scoped_token: None,
         };
-        client.fetch_jwt().await.expect("Failed to fetch JWT");
         client.discover_ingest_host().await.expect("Failed to discover ingest host");
         client.get_scoped_token().await.expect("Failed to get scoped token");
         Ok(client)
     }
 
     async fn fetch_jwt(&mut self) -> Result<(), Error> {
-        todo!();
+        todo!("Implement JWT fetching from SnowSQL or other source");
     }
 
     async fn discover_ingest_host(&mut self) -> Result<(), reqwest::Error> {
@@ -58,7 +57,7 @@ impl<R: Serialize+Clone> StreamingIngestClient<R> {
         let client = Client::new();
         let resp = client
             .get(&url)
-            .header("Authorization", format!("Bearer {}", self.jwt.as_ref().expect("JWT not set")))
+            .header("Authorization", format!("Bearer {}", self.jwt_token))
             .header("X-Snowflake-Authorization-Token-Type", "KEYPAIR_JWT")
             .send()
             .await?;
@@ -74,7 +73,7 @@ impl<R: Serialize+Clone> StreamingIngestClient<R> {
         let client = Client::new();
         let resp = client.post(&url)
             .header("Content-Type", "application/x-www-form-urlencoded")
-            .header("Authorization", format!("Bearer {}", self.jwt.as_ref().expect("JWT not set")))
+            .header("Authorization", format!("Bearer {}", self.jwt_token))
             .body(format!("grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&scope={}", self.ingest_host.as_ref().expect("Ingest host not set")))
             .send()
             .await?;
