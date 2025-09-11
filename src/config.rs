@@ -1,4 +1,5 @@
-/// read configuration from a file
+
+//! read configuration from a file
 
 use crate::errors::Error;
 
@@ -8,6 +9,7 @@ pub struct Config {
     pub account: String,
     pub url: String,
     pub private_key: String,
+    pub private_key_path: String,
     pub jwt_token: String,
 }
 

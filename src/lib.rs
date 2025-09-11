@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 mod channel;
 mod client;
 mod config;
@@ -48,6 +49,6 @@ mod tests {
                 .expect("Failed to append row");
             i += 1;
         }
-        channel.close().await;
+        channel.close().await.unwrap();
     }
 }

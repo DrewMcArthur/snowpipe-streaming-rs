@@ -3,6 +3,8 @@ pub enum Error {
     Io(std::io::Error),
     Json(serde_json::Error),
     Http(reqwest::Error),
+    DataTooLarge(usize, usize),
+    JwtError(std::process::Output),
 }
 
 impl From<std::io::Error> for Error {
@@ -20,5 +22,11 @@ impl From<serde_json::Error> for Error {
 impl From<reqwest::Error> for Error {
     fn from(err: reqwest::Error) -> Self {
         Error::Http(err)
+    }
+}
+
+impl From<std::process::Output> for Error { 
+    fn from(output: std::process::Output) -> Self {
+        Error::JwtError(output)
     }
 }

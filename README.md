@@ -10,7 +10,8 @@ This library is meant to replicate the python api interface, to allow users to s
 
 ## TODO
 - check flows and make sure it all works, get example working
-- batch `append_row` requests, to speed up / minimize HTTP throughput
+- add `append_rows` function, accepting a `Vec<RowType>`
+- create a `BufferedClient`, which batches `append_row` requests, to speed up / minimize HTTP throughput
 - documentation! doctests!
 - mock http server? 
 - change how client is created, use a builder or the model that has different structs for different stages so that errors are less possible, like what's described [here](https://blog.systems.ethz.ch/blog/2018/a-hammer-you-can-only-hold-by-the-handle.html)
