@@ -26,7 +26,16 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
         let token = resp
             .channel_status
             .last_committed_offset_token
-            .unwrap_or(0);
+            .clone()
+            .unwrap_or("0".to_string())
+            .parse()
+            .expect(
+                format!(
+                    "Failed to parse last_committed_offset_token from response: {:?}",
+                    resp.channel_status.last_committed_offset_token
+                )
+                .as_str(),
+            );
         StreamingIngestChannel {
             _marker: std::marker::PhantomData,
             client: client.clone(),
@@ -107,7 +116,19 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
 
         self.last_pushed_offset_token = offset;
         self.continuation_token = resp.next_continuation_token;
-        self.last_committed_offset_token = resp.channel_status.last_committed_offset_token.unwrap_or(0);
+        self.last_committed_offset_token = resp
+            .channel_status
+            .last_committed_offset_token
+            .clone()
+            .unwrap_or("0".to_string())
+            .parse()
+            .expect(
+                format!(
+                    "Failed to parse last_committed_offset_token after appending rows {:?}",
+                    resp.channel_status.last_committed_offset_token,
+                )
+                .as_str(),
+            );
         Ok(())
     }
 
@@ -163,7 +184,13 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
         match status {
             Some(Ok(status)) => {
                 println!("Channel Status: {:?}", status);
-                self.last_committed_offset_token = status.last_committed_offset_token.unwrap_or(0);
+                self.last_committed_offset_token = status.last_committed_offset_token .clone()
+            .unwrap_or("0".to_string())
+            .parse()
+            .expect(format!(
+                "Failed to parse last_committed_offset_token while getting channel status {:?}",
+                status.last_committed_offset_token,
+            ).as_str());
             }
             s => {
                 println!("Failed to parse channel status: {:?}", s);
