@@ -8,10 +8,13 @@ mod types;
 pub use channel::StreamingIngestChannel;
 pub use client::StreamingIngestClient;
 pub use errors::Error;
+pub use config::ConfigLocation;
 
 #[cfg(test)]
 mod tests {
     use jiff::Zoned;
+
+    use crate::config::ConfigLocation;
 
     use super::*;
 
@@ -29,7 +32,7 @@ mod tests {
             "my_db",
             "my_schema",
             "my_pipe",
-            "{}",
+            ConfigLocation::File("{}".into()),
         )
         .await
         .expect("Failed to create client");

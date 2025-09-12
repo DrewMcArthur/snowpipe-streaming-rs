@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use reqwest::Client;
 use serde::Serialize;
 
-use crate::{channel::StreamingIngestChannel, config::read_config, errors::Error};
+use crate::{channel::StreamingIngestChannel, config::{read_config, ConfigLocation}, errors::Error};
 
 #[derive(Clone)]
 pub struct StreamingIngestClient<R> {
@@ -36,16 +36,15 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         db_name: &str,
         schema_name: &str,
         pipe_name: &str,
-        profile_json: &str,
+        profile_json: ConfigLocation,
     ) -> Result<Self, Error> {
-        let config = read_config(profile_json)?;
+        let config = read_config(profile_json).await?;
         let control_host = if config.url.starts_with("http") {
             config.url
         } else {
             format!("https://{}", config.url)
         };
-        let jwt_token =
-            std::env::var("SNOWFLAKE_JWT_TOKEN").expect("Set SNOWFLAKE_JWT_TOKEN env var with the following command:\n\n$ export SNOWFLAKE_JWT_TOKEN=$(snowsql -a ACCOUNT -u USERNAME@MATHEMATICA-MPR.COM --private-key-path ./private_key.p8 --generate-jwt)");
+        let jwt_token = config.jwt_token;
         let account = config.account;
         // TODO: validate control host is a valid URL
         let mut client = StreamingIngestClient {
