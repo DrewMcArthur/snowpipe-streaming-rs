@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use reqwest::Client;
 use serde::Serialize;
+use tracing::error;
 
 use crate::{
     channel::StreamingIngestChannel,
@@ -84,8 +85,15 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             .header("Authorization", format!("Bearer {}", self.jwt_token))
             .header("X-Snowflake-Authorization-Token-Type", "KEYPAIR_JWT")
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+
+        if !resp.status().is_success() {
+            error!(
+                "Failed to discover ingest host: {}",
+                resp.text().await.unwrap_or_default()
+            );
+        }
+        resp.error_for_status()?;
 
         let ingest_host = resp.text().await?;
         self.ingest_host = Some(ingest_host);
