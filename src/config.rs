@@ -15,9 +15,9 @@ pub struct Config {
     pub user: String,
     pub account: String,
     pub url: String,
-    pub private_key: String,
-    pub private_key_path: String,
     pub jwt_token: String,
+    pub private_key: Option<String>,
+    pub private_key_path: Option<String>,
 }
 
 pub(crate) async fn read_config(loc: ConfigLocation) -> Result<Config, Error> {
@@ -40,8 +40,8 @@ fn read_config_from_env() -> Result<Config, Error> {
             .map_err(|_| Error::Config("Missing SNOWFLAKE_ACCOUNT env var".to_string()))?,
         url: std::env::var("SNOWFLAKE_URL")
             .map_err(|_| Error::Config("Missing SNOWFLAKE_URL env var".to_string()))?,
-        private_key: "".to_string(),
-        private_key_path: "".to_string(),
+        private_key: None,
+        private_key_path: None,
         jwt_token: std::env::var("SNOWFLAKE_JWT_TOKEN")
             .map_err(|_| Error::Config("Missing SNOWFLAKE_JWT_TOKEN env var".to_string()))?,
     })
@@ -63,7 +63,6 @@ async fn read_config_from_secret() -> Result<Config, Error> {
         Some(s) => Ok(s),
         None => Err(Error::Config("Failed to get secret string, returned None".to_string())),
     }?;
-    let config: Config = serde_json::from_str(secret)
-        .map_err(|e| Error::Config(format!("Failed to parse secret JSON: {}", e)))?;
+    let config: Config = serde_json::from_str(secret)?;
     Ok(config)
 }
