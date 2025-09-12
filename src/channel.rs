@@ -93,6 +93,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
                 ),
             )
             .header("Content-Type", "application/json")
+            .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
             .body(data)
             .send()
             .await?
@@ -139,6 +140,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
                 ),
             )
             .header("Content-Type", "application/json")
+            .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
             .body(format!(
                 "{{\"channel_names\": [\"{}\"]}}",
                 self.channel_name
@@ -201,6 +203,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
                 ),
             )
             .header("Content-Type", "application/json")
+            .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
             .send()
             .await?
             .error_for_status()?;

@@ -84,6 +84,7 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.jwt_token))
             .header("X-Snowflake-Authorization-Token-Type", "KEYPAIR_JWT")
+            .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
             .send()
             .await?;
 
@@ -110,6 +111,7 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             .post(&url)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .header("Authorization", format!("Bearer {}", self.jwt_token))
+            .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
             .body(format!(
                 "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&scope={}",
                 self.ingest_host.as_ref().expect("Ingest host not set")
@@ -145,6 +147,7 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
                 ),
             )
             .header("Content-Type", "application/json")
+            .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
             .body("{}")
             .send()
             .await?
