@@ -48,7 +48,7 @@ fn read_config_from_env() -> Result<Config, Error> {
 }
 
 async fn read_config_from_secret() -> Result<Config, Error> {
-    let secret_arn = std::env::var("PROFILE_CONFIG_SECRET_ARN")
+    let secret_arn = std::env::var("SNOWFLAKE_CONFIG_SECRET_ARN")
         .map_err(|_| Error::Config("Missing PROFILE_CONFIG_SECRET_ARN env var".to_string()))?;
     let client = aws_sdk_secretsmanager::Client::new(
         &aws_config::load_defaults(BehaviorVersion::latest()).await,
