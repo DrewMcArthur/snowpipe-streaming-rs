@@ -1,5 +1,7 @@
 //! read configuration from a file
 
+use aws_config::BehaviorVersion;
+
 use crate::errors::Error;
 
 pub enum ConfigLocation {
@@ -53,8 +55,6 @@ async fn read_config_from_secret() -> Result<Config, Error> {
     let client = aws_sdk_secretsmanager::Client::new(
         &aws_config::load_defaults(BehaviorVersion::latest())
             .await
-            .region(region)
-            .await,
     );
     let resp = client
         .get_secret_value()
