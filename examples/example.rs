@@ -1,6 +1,7 @@
 use snowpipe_streaming::StreamingIngestClient;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let max_rows = 100_000;
     let poll_attempts = 30;
     let poll_interval_ms = 1000;
@@ -13,7 +14,9 @@ fn main() {
         schema_name = "MY_SCHEMA",
         pipe_name = "MY_PIPE",
         profile_json = "profile.json", //depends on your folder structure
-    ).await.expect("failed to create client");
+    )
+    .await
+    .expect("failed to create client");
 
     // Open a channel for data ingestion
     let channel_uuid = uuid();

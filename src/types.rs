@@ -3,7 +3,7 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct OpenChannelResponse {
     pub next_continuation_token: String,
-    pub channel_status: ChannelStatus
+    pub channel_status: ChannelStatus,
 }
 
 #[derive(Debug, Deserialize)]
@@ -20,5 +20,5 @@ pub struct ChannelStatus {
     last_error_offset_upper_bound: String,
     last_error_message: String,
     last_error_timestamp: String, // timestamp_utc
-    snowflake_avg_processing_latency_ms: i32
+    snowflake_avg_processing_latency_ms: i32,
 }

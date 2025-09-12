@@ -3,7 +3,11 @@ use std::marker::PhantomData;
 use reqwest::Client;
 use serde::Serialize;
 
-use crate::{channel::StreamingIngestChannel, config::{read_config, ConfigLocation}, errors::Error};
+use crate::{
+    channel::StreamingIngestChannel,
+    config::{ConfigLocation, read_config},
+    errors::Error,
+};
 
 #[derive(Clone)]
 pub struct StreamingIngestClient<R> {

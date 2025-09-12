@@ -2,7 +2,7 @@
 name = "snowpipe-streaming"
 version = "0.1.0"
 edition = "2024"
-publish = ["shared-package-domain-cargo-store"]
+publish=false
 
 [dependencies]
 aws-config = { version = "1.8.6" }
