@@ -9,7 +9,7 @@ pub struct OpenChannelResponse {
 #[derive(Debug, Deserialize)]
 pub struct ChannelStatus {
     channel_status_code: String,
-    pub last_committed_offset_token: u64,
+    pub last_committed_offset_token: Option<u64>,
     database_name: String,
     schema_name: String,
     pipe_name: String,

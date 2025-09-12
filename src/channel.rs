@@ -23,13 +23,17 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
         resp: OpenChannelResponse,
         channel_name: &str,
     ) -> Self {
+        let token = resp
+            .channel_status
+            .last_committed_offset_token
+            .unwrap_or(0);
         StreamingIngestChannel {
             _marker: std::marker::PhantomData,
             client: client.clone(),
             channel_name: channel_name.to_string(),
             continuation_token: resp.next_continuation_token,
-            last_committed_offset_token: resp.channel_status.last_committed_offset_token,
-            last_pushed_offset_token: resp.channel_status.last_committed_offset_token,
+            last_committed_offset_token: token,
+            last_pushed_offset_token: token,
         }
     }
 
@@ -103,7 +107,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
 
         self.last_pushed_offset_token = offset;
         self.continuation_token = resp.next_continuation_token;
-        self.last_committed_offset_token = resp.channel_status.last_committed_offset_token;
+        self.last_committed_offset_token = resp.channel_status.last_committed_offset_token.unwrap_or(0);
         Ok(())
     }
 
@@ -159,7 +163,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
         match status {
             Some(Ok(status)) => {
                 println!("Channel Status: {:?}", status);
-                self.last_committed_offset_token = status.last_committed_offset_token;
+                self.last_committed_offset_token = status.last_committed_offset_token.unwrap_or(0);
             }
             s => {
                 println!("Failed to parse channel status: {:?}", s);
