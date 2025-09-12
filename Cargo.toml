@@ -2,13 +2,14 @@
 name = "snowpipe-streaming"
 version = "0.1.0"
 edition = "2024"
-publish=false
+publish = false
 
 [dependencies]
 aws-config = { version = "1.8.6" }
 aws-sdk-secretsmanager = { version = "1.87.0" }
-jiff = { version = "0.2.15",  features = ["serde"] }
+jiff = { version = "0.2.15", features = ["serde"] }
 reqwest = { version = "0.12.23", features = ["json"] }
 serde = "1.0.219"
 serde_json = "1.0.143"
 tokio = { version = "1.47.1", features = ["macros", "rt"] }
+tracing = { version = "0.1.41" }
