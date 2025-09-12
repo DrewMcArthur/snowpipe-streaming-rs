@@ -1,5 +1,7 @@
 # Snowpipe Streaming Rust SDK
 
+**WARNING: DEFINITELY NOT PRODUCTION READY**
+
 This library is meant to replicate the python api interface, to allow users to stream data to snowflake via the snowpipe streaming API.  This is a naive implementation, since the Python and Java SDKs are not open source, so I'm guessing based off the REST guide and the external visibility of the Python SDK.
 
 ## References
@@ -15,3 +17,4 @@ This library is meant to replicate the python api interface, to allow users to s
 - documentation! doctests!
 - mock http server? 
 - change how client is created, use a builder or the model that has different structs for different stages so that errors are less possible, like what's described [here](https://blog.systems.ethz.ch/blog/2018/a-hammer-you-can-only-hold-by-the-handle.html)
+- hide aws behind feature flag
