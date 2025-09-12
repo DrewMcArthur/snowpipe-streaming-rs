@@ -5,6 +5,7 @@ pub enum Error {
     Http(reqwest::Error),
     DataTooLarge(usize, usize),
     JwtError(std::process::Output),
+    Config(String),
 }
 
 impl From<std::io::Error> for Error {

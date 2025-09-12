@@ -19,6 +19,18 @@ pub struct StreamingIngestClient<R> {
 }
 
 impl<R: Serialize + Clone> StreamingIngestClient<R> {
+    /// Create a new StreamingIngestClient
+    /// # Arguments
+    /// * `client_name` - A name for the client
+    /// * `db_name` - The name of the database
+    /// * `schema_name` - The name of the schema
+    /// * `pipe_name` - The name of the pipe
+    /// * `profile_json` - Location to read profile config from.  Use "ENV" to read from environment variables
+    /// # ENV Vars
+    /// * `SNOWFLAKE_JWT_TOKEN` - The JWT token to use for authentication.  This can be generated using the `snowsql` command line tool
+    /// * `SNOWFLAKE_ACCOUNT` - The Snowflake account name
+    /// * `SNOWFLAKE_USERNAME` - The Snowflake username
+    /// * `SNOWFLAKE_URL` - The URL of the Snowflake account
     pub async fn new(
         _client_name: &str,
         db_name: &str,
