@@ -63,7 +63,7 @@ async fn read_config_from_secret() -> Result<Config, Error> {
         .map_err(|e| Error::Config(format!("Failed to get secret: {}", e)))?;
     let secret = match resp.secret_string() {
         Some(s) => Ok(s),
-        None => Err(Error::Config("Failed to get secret string, returned None")),
+        None => Err(Error::Config("Failed to get secret string, returned None".to_string())),
     }?;
     let config: Config = serde_json::from_str(&secret)
         .map_err(|e| Error::Config(format!("Failed to parse secret JSON: {}", e)))?;
