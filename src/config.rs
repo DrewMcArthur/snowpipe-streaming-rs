@@ -50,8 +50,6 @@ fn read_config_from_env() -> Result<Config, Error> {
 async fn read_config_from_secret() -> Result<Config, Error> {
     let secret_arn = std::env::var("PROFILE_CONFIG_SECRET_ARN")
         .map_err(|_| Error::Config("Missing PROFILE_CONFIG_SECRET_ARN env var".to_string()))?;
-    let region = std::env::var("AWS_REGION")
-        .map_err(|_| Error::Config("Missing AWS_REGION env var".to_string()))?;
     let client = aws_sdk_secretsmanager::Client::new(
         &aws_config::load_defaults(BehaviorVersion::latest()).await,
     );
@@ -65,7 +63,7 @@ async fn read_config_from_secret() -> Result<Config, Error> {
         Some(s) => Ok(s),
         None => Err(Error::Config("Failed to get secret string, returned None".to_string())),
     }?;
-    let config: Config = serde_json::from_str(&secret)
+    let config: Config = serde_json::from_str(secret)
         .map_err(|e| Error::Config(format!("Failed to parse secret JSON: {}", e)))?;
     Ok(config)
 }
