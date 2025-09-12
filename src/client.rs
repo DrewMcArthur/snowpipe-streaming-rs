@@ -87,17 +87,18 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             .send()
             .await?;
 
-        if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        if status.is_success() {
+            self.ingest_host = Some(body);
+            Ok(())
+        } else {
             error!(
                 "Failed to discover ingest host: {}",
-                resp.text().await.unwrap_or_default()
+                body
             );
+            Err(Error::IngestHostDiscovery(status, body))
         }
-        resp.error_for_status()?;
-
-        let ingest_host = resp.text().await?;
-        self.ingest_host = Some(ingest_host);
-        Ok(())
     }
 
     async fn get_scoped_token(&mut self) -> Result<(), Error> {

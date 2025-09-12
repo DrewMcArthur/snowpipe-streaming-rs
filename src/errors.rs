@@ -1,8 +1,11 @@
+use reqwest::StatusCode;
+
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
     Json(serde_json::Error),
     Http(reqwest::Error),
+    IngestHostDiscovery(StatusCode, String),
     DataTooLarge(usize, usize),
     JwtError(std::process::Output),
     Config(String),
