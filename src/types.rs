@@ -16,11 +16,11 @@ pub struct ChannelStatus {
     channel_status_code: String,
     pub last_committed_offset_token: Option<String>,
     created_on_ms: u64,
-    rows_inserted: i32,
-    rows_parsed: i32,
-    rows_errors: i32,
+    rows_inserted: Option<i32>,
+    rows_parsed: Option<i32>,
+    rows_errors: Option<i32>,
     last_error_offset_upper_bound: Option<String>,
     last_error_message: Option<String>,
     last_error_timestamp: Option<u64>, // timestamp_utc
-    snowflake_avg_processing_latency_ms: i32,
+    snowflake_avg_processing_latency_ms: Option<i32>,
 }
