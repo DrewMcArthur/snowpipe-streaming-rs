@@ -1,6 +1,11 @@
 use serde::Deserialize;
 
 #[derive(Deserialize)]
+pub struct AppendRowsResponse {
+    pub next_continuation_token: String,
+}
+
+#[derive(Deserialize)]
 pub struct OpenChannelResponse {
     pub next_continuation_token: String,
     pub channel_status: ChannelStatus,

@@ -2,8 +2,7 @@ use reqwest::Client;
 use serde::Serialize;
 
 use crate::{
-    Error, StreamingIngestClient,
-    types::{ChannelStatus, OpenChannelResponse},
+    types::{AppendRowsResponse, ChannelStatus, OpenChannelResponse}, Error, StreamingIngestClient
 };
 
 const MAX_REQUEST_SIZE: usize = 16 * 1024 * 1024; // 16MB
@@ -111,7 +110,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             .send()
             .await?
             .error_for_status()?
-            .json::<OpenChannelResponse>()
+            .json::<AppendRowsResponse>()
             .await?;
 
         self.last_pushed_offset_token = offset;
