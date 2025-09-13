@@ -22,10 +22,10 @@ async fn main() {
     let channel_uuid = uuid();
     let channel_name = format!("my_channel_{channel_uuid}");
     let channel = client.open_channel(channel_name);
-    println!("Channel opened: {channel_name}");
+    info!("Channel opened: {channel_name}");
 
     // Ingest rows
-    println!("Ingesting {max_rows} rows");
+    info!("Ingesting {max_rows} rows");
     for i in 0..max_rows {
         let row_id = str(i);
         let row = Row {

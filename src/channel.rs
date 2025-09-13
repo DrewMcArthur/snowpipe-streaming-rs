@@ -1,5 +1,6 @@
 use reqwest::Client;
 use serde::Serialize;
+use tracing::{error, info};
 
 use crate::{
     types::{AppendRowsResponse, ChannelStatus, OpenChannelResponse}, Error, StreamingIngestClient
@@ -73,9 +74,11 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
 
     async fn append_rows_call(&mut self, data: String) -> Result<(), Error> {
         if data.len() > MAX_REQUEST_SIZE {
+            error!("Data size {} exceeds maximum request size {}", data.len(), MAX_REQUEST_SIZE);
             return Err(Error::DataTooLarge(data.len(), MAX_REQUEST_SIZE));
         }
 
+        info!("Appending data of size {}", data.len());
         let offset = self.last_pushed_offset_token + 1;
         let url = format!(
             "https://{}/v2/streaming/data/databases/{}/schemas/{}/pipes/{}/channels/{}/rows?continuationToken={}&offsetToken={}",
@@ -169,7 +172,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
 
         match status {
             Some(Ok(status)) => {
-                println!("Channel Status: {:?}", status);
+                info!("Channel Status: {:?}", status);
                 self.last_committed_offset_token = status.last_committed_offset_token .clone()
             .unwrap_or("0".to_string())
             .parse()
@@ -179,7 +182,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             ).as_str());
             }
             s => {
-                println!("Failed to parse channel status: {:?}", s);
+                error!("Failed to parse channel status: {:?}", s);
             }
         }
 

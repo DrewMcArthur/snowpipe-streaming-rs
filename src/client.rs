@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use reqwest::Client;
 use serde::Serialize;
-use tracing::error;
+use tracing::{error, info};
 
 use crate::{
     channel::StreamingIngestChannel,
@@ -154,6 +154,8 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             .error_for_status()?
             .json()
             .await?;
+
+        info!("Channel opened: {}", channel_name);
 
         Ok(StreamingIngestChannel::from_response(
             self,
