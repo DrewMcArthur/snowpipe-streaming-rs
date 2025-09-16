@@ -85,9 +85,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
         I: IntoIterator<Item = R>,
     {
         let mut iter = rows.into_iter();
-        self.append_rows(&mut iter)
-            .await
-            .map_err(|e| e)
+        self.append_rows(&mut iter).await
     }
 
     async fn append_rows_call(&mut self, data: String) -> Result<(), Error> {

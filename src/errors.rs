@@ -45,10 +45,18 @@ impl std::fmt::Display for Error {
             Error::Json(e) => write!(f, "JSON error: {}", e),
             Error::Http(e) => write!(f, "HTTP error: {}", e),
             Error::IngestHostDiscovery(code, body) => {
-                write!(f, "Ingest host discovery failed: status={} body={}", code, body)
+                write!(
+                    f,
+                    "Ingest host discovery failed: status={} body={}",
+                    code, body
+                )
             }
             Error::DataTooLarge(actual, max) => {
-                write!(f, "Data too large: actual={} bytes > max={} bytes", actual, max)
+                write!(
+                    f,
+                    "Data too large: actual={} bytes > max={} bytes",
+                    actual, max
+                )
             }
             Error::JwtError(_) => write!(f, "JWT generation process failed"),
             Error::Config(msg) => write!(f, "Config error: {}", msg),
