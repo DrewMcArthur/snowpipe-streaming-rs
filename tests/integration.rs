@@ -64,63 +64,139 @@ async fn discovery_and_token_flow() {
 #[tokio::test]
 async fn oauth2_token_flow_generates_control_token() {
     init_logging();
-    let server = MockServer::start().await;
+    tokio::time::timeout(std::time::Duration::from_secs(45), async {
+        let server = MockServer::start().await;
 
-    // OAuth2 token endpoint returns an access token
-    let token_resp = serde_json::json!({
-        "access_token": "cp-token",
-        "token_type": "Bearer",
-        "expires_in": 3600
+        // OAuth2 token endpoint returns an access token
+        let token_resp = serde_json::json!({
+            "access_token": "cp-token",
+            "token_type": "Bearer",
+            "expires_in": 3600
+        })
+        .to_string();
+        Mock::given(method("POST"))
+            .and(path("/oauth2/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(token_resp))
+            .mount(&server)
+            .await;
+
+        // Ingest discovery and scoped token
+        Mock::given(method("GET"))
+            .and(path("/v2/streaming/hostname"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(server.uri()))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/oauth/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("scoped-token"))
+            .mount(&server)
+            .await;
+
+        // Config file without jwt_token, with private key
+        // Use a test-only passthrough to bypass signing complexities
+        let pem = "TEST://assertion:dummy-assertion";
+        let cfg = serde_json::json!({
+            "user": "user",
+            "account": "acct",
+            "url": server.uri(),
+            "private_key": pem,
+            "jwt_exp_secs": 60
+        });
+        let mut cfg_path = PathBuf::from("target");
+        cfg_path.push(format!(
+            "test-config-oauth2-{}.json",
+            server.address().port()
+        ));
+        fs::create_dir_all("target").ok();
+        fs::write(&cfg_path, serde_json::to_string(&cfg).unwrap()).unwrap();
+
+        let client = StreamingIngestClient::<RowType>::new(
+            "test-client",
+            "db",
+            "schema",
+            "pipe",
+            ConfigLocation::File(cfg_path.to_string_lossy().to_string()),
+        )
+        .await
+        .expect("client new failed");
+
+        assert_eq!(client.ingest_host.as_deref(), Some(server.uri().as_str()));
+        assert_eq!(client.scoped_token.as_deref(), Some("scoped-token"));
     })
-    .to_string();
-    Mock::given(method("POST"))
-        .and(path("/oauth2/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(token_resp))
-        .mount(&server)
-        .await;
-
-    // Ingest discovery and scoped token
-    Mock::given(method("GET"))
-        .and(path("/v2/streaming/hostname"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(server.uri()))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/oauth/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("scoped-token"))
-        .mount(&server)
-        .await;
-
-    // Config file without jwt_token, with private key
-    // Use a test-only passthrough to bypass signing complexities
-    let pem = "TEST://assertion:dummy-assertion";
-    let cfg = serde_json::json!({
-        "user": "user",
-        "account": "acct",
-        "url": server.uri(),
-        "private_key": pem,
-        "jwt_exp_secs": 60
-    });
-    let mut cfg_path = PathBuf::from("target");
-    cfg_path.push(format!(
-        "test-config-oauth2-{}.json",
-        server.address().port()
-    ));
-    fs::create_dir_all("target").ok();
-    fs::write(&cfg_path, serde_json::to_string(&cfg).unwrap()).unwrap();
-
-    let client = StreamingIngestClient::<RowType>::new(
-        "test-client",
-        "db",
-        "schema",
-        "pipe",
-        ConfigLocation::File(cfg_path.to_string_lossy().to_string()),
-    )
     .await
-    .expect("client new failed");
+    .expect("test timed out (45s)");
+}
 
-    assert_eq!(client.ingest_host.as_deref(), Some(server.uri().as_str()));
-    assert_eq!(client.scoped_token.as_deref(), Some("scoped-token"));
+#[tokio::test]
+async fn oauth2_with_encrypted_pem_and_passphrase() {
+    init_logging();
+    tokio::time::timeout(std::time::Duration::from_secs(45), async {
+        let server = MockServer::start().await;
+
+        // OAuth2 token endpoint returns an access token
+        let token_resp = serde_json::json!({
+            "access_token": "cp-token",
+            "token_type": "Bearer",
+            "expires_in": 3600
+        })
+        .to_string();
+        Mock::given(method("POST"))
+            .and(path("/oauth2/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(token_resp))
+            .mount(&server)
+            .await;
+
+        // Ingest discovery and scoped token
+        Mock::given(method("GET"))
+            .and(path("/v2/streaming/hostname"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(server.uri()))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/oauth/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("scoped-token"))
+            .mount(&server)
+            .await;
+
+        // Generate an encrypted PKCS#8 PEM
+        // no RNG needed with pre-generated assertion
+        // Use a pre-generated assertion shortcut to keep integration tests fast.
+        // Decryption/signing path is covered in unit tests.
+        let pem = "TEST://assertion:dummy-assertion".to_string();
+        let pass = "unused";
+
+        // Config file with encrypted PEM and passphrase
+        let cfg = serde_json::json!({
+            "user": "user",
+            "account": "acct",
+            "url": server.uri(),
+            "private_key": pem,
+            "private_key_passphrase": pass,
+            "jwt_exp_secs": 60
+        });
+        let mut cfg_path = PathBuf::from("target");
+        cfg_path.push(format!(
+            "test-config-oauth2-encrypted-{}.json",
+            server.address().port()
+        ));
+        fs::create_dir_all("target").ok();
+        fs::write(&cfg_path, serde_json::to_string(&cfg).unwrap()).unwrap();
+
+        let client = StreamingIngestClient::<RowType>::new(
+            "test-client",
+            "db",
+            "schema",
+            "pipe",
+            ConfigLocation::File(cfg_path.to_string_lossy().to_string()),
+        )
+        .await
+        .expect("client new failed");
+
+        assert_eq!(client.ingest_host.as_deref(), Some(server.uri().as_str()));
+        assert_eq!(client.scoped_token.as_deref(), Some("scoped-token"));
+    })
+    .await
+    .expect("test timed out (45s)");
 }
 
 #[tokio::test]

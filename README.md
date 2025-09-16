@@ -57,7 +57,7 @@ Config fields (JSON file or env):
 - `jwt_token` (`SNOWFLAKE_JWT_TOKEN`) – Optional; omit to enable programmatic token generation
 - `private_key` (`SNOWFLAKE_PRIVATE_KEY`) – Optional PEM-encoded private key string
 - `private_key_path` (`SNOWFLAKE_PRIVATE_KEY_PATH`) – Optional path to private key PEM file
-- `private_key_passphrase` (`SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`) – Currently unsupported (encrypted keys not yet supported)
+- `private_key_passphrase` (`SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`) – Passphrase for encrypted PKCS#8 private keys
 - `jwt_exp_secs` (`SNOWFLAKE_JWT_EXP_SECS`) – Optional JWT client assertion lifetime (default 60s)
 
 Example (programmatic):

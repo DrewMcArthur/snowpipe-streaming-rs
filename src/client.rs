@@ -1,6 +1,9 @@
 use std::marker::PhantomData;
 
+use pkcs8::DecodePrivateKey;
+use pkcs8::der::Decode;
 use reqwest::Client;
+use rsa::pkcs1::EncodeRsaPrivateKey;
 use serde::Serialize;
 use tracing::{error, info};
 
@@ -50,13 +53,42 @@ fn generate_assertion(url: &str, cfg: &crate::config::Config) -> Result<String, 
                 .into(),
         ));
     };
-    if cfg.private_key_passphrase.is_some() {
-        return Err(Error::Key(
-            "Encrypted private keys not yet supported".into(),
-        ));
-    }
-    let enc_key = jsonwebtoken::EncodingKey::from_rsa_pem(&pem_bytes)
-        .map_err(|e| Error::Key(format!("Invalid RSA private key: {e}")))?;
+    // Parse PEM and handle encrypted PKCS#8
+    let enc_key = match pem::parse_many(&pem_bytes) {
+        Ok(blocks) if !blocks.is_empty() => {
+            let block = &blocks[0];
+            match block.tag() {
+                "ENCRYPTED PRIVATE KEY" => {
+                    let pass = cfg.private_key_passphrase.as_deref().ok_or_else(|| {
+                        Error::Key("Encrypted private key provided but no passphrase set".into())
+                    })?;
+                    let info = pkcs8::EncryptedPrivateKeyInfo::from_der(block.contents())
+                        .map_err(|e| Error::Key(format!("Encrypted PKCS#8 parse error: {e}")))?;
+                    let der = info
+                        .decrypt(pass)
+                        .map_err(|e| Error::Key(format!("PKCS#8 decryption failed: {e}")))?;
+                    let rsa = rsa::RsaPrivateKey::from_pkcs8_der(der.as_bytes())
+                        .map_err(|e| Error::Key(format!("PKCS#8 to RSA parse failed: {e}")))?;
+                    let pkcs1 = rsa
+                        .to_pkcs1_der()
+                        .map_err(|e| Error::Key(format!("PKCS#1 DER encode failed: {e}")))?;
+                    jsonwebtoken::EncodingKey::from_rsa_der(pkcs1.as_bytes())
+                }
+                "PRIVATE KEY" => {
+                    let rsa = rsa::RsaPrivateKey::from_pkcs8_der(block.contents())
+                        .map_err(|e| Error::Key(format!("PKCS#8 parse failed: {e}")))?;
+                    let pkcs1 = rsa
+                        .to_pkcs1_der()
+                        .map_err(|e| Error::Key(format!("PKCS#1 DER encode failed: {e}")))?;
+                    jsonwebtoken::EncodingKey::from_rsa_der(pkcs1.as_bytes())
+                }
+                _ => jsonwebtoken::EncodingKey::from_rsa_pem(&pem_bytes)
+                    .map_err(|e| Error::Key(format!("Invalid RSA private key: {e}")))?,
+            }
+        }
+        _ => jsonwebtoken::EncodingKey::from_rsa_pem(&pem_bytes)
+            .map_err(|e| Error::Key(format!("Invalid RSA private key: {e}")))?,
+    };
     let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     let assertion = jsonwebtoken::encode(&header, &claims, &enc_key)
         .map_err(|e| Error::JwtSign(format!("JWT signing failed: {e}")))?;
