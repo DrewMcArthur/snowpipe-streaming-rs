@@ -1,15 +1,6 @@
-//! read configuration from a file
-
-use aws_config::BehaviorVersion;
+//! Configuration for the client
 
 use crate::errors::Error;
-
-#[allow(dead_code)]
-pub enum ConfigLocation {
-    File(String),
-    Env,
-    Secret,
-}
 
 #[derive(serde::Deserialize, Clone)]
 pub struct Config {
@@ -77,29 +68,7 @@ fn read_config_from_env() -> Result<Config, Error> {
     })
 }
 
-#[allow(dead_code)]
-#[deprecated(note = "Use Config::from_values/from_file/from_env; AWS secret loading deprecated")]
-async fn read_config_from_secret() -> Result<Config, Error> {
-    let secret_arn = std::env::var("SNOWFLAKE_CONFIG_SECRET_ARN")
-        .map_err(|_| Error::Config("Missing PROFILE_CONFIG_SECRET_ARN env var".to_string()))?;
-    let client = aws_sdk_secretsmanager::Client::new(
-        &aws_config::load_defaults(BehaviorVersion::latest()).await,
-    );
-    let resp = client
-        .get_secret_value()
-        .secret_id(secret_arn)
-        .send()
-        .await
-        .map_err(|e| Error::Config(format!("Failed to get secret: {}", e)))?;
-    let secret = match resp.secret_string() {
-        Some(s) => Ok(s),
-        None => Err(Error::Config(
-            "Failed to get secret string, returned None".to_string(),
-        )),
-    }?;
-    let config: Config = serde_json::from_str(secret)?;
-    Ok(config)
-}
+// AWS secret loading removed; prefer loading in app code and deserializing into Config.
 
 #[cfg(test)]
 mod tests {
