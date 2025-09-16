@@ -95,7 +95,10 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             self.ingest_host = Some(body);
             Ok(())
         } else {
-            error!("discover ingest host failed: status={} body='{}'", status, body);
+            error!(
+                "discover ingest host failed: status={} body='{}'",
+                status, body
+            );
             Err(Error::IngestHostDiscovery(status, body))
         }
     }

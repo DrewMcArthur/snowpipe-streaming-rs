@@ -76,9 +76,12 @@ mod tests {
           }
         }"#;
         let v: serde_json::Value = serde_json::from_str(json).unwrap();
-        let status = v.get("channel_statuses")
+        let status = v
+            .get("channel_statuses")
             .and_then(|cs| cs.get("ch"))
-            .map(|s| serde_json::from_value::<ChannelStatus>(s.clone())).unwrap().unwrap();
+            .map(|s| serde_json::from_value::<ChannelStatus>(s.clone()))
+            .unwrap()
+            .unwrap();
         assert_eq!(status.channel_name, "ch");
         assert_eq!(status.last_committed_offset_token.as_deref(), Some("1"));
     }
