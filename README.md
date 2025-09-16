@@ -43,6 +43,54 @@ let client = StreamingIngestClient::<YourRow>::new(
 ).await?;
 ```
 
+## Usage: Authentication
+
+Two options are supported:
+
+- Pre-supplied JWT (existing): Provide `SNOWFLAKE_JWT_TOKEN` (or `jwt_token` in config). The client uses `KEYPAIR_JWT` for control-plane calls.
+- Programmatic JWT generation (new): Provide a private key (string or file path), and the client generates a control-plane access token via the Snowflake OAuth2 endpoint.
+
+Config fields (JSON file or env):
+- `user` (`SNOWFLAKE_USERNAME`) – Snowflake user identifier
+- `account` (`SNOWFLAKE_ACCOUNT`) – Snowflake account identifier
+- `url` (`SNOWFLAKE_URL`) – Control-plane base URL
+- `jwt_token` (`SNOWFLAKE_JWT_TOKEN`) – Optional; omit to enable programmatic token generation
+- `private_key` (`SNOWFLAKE_PRIVATE_KEY`) – Optional PEM-encoded private key string
+- `private_key_path` (`SNOWFLAKE_PRIVATE_KEY_PATH`) – Optional path to private key PEM file
+- `private_key_passphrase` (`SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`) – Currently unsupported (encrypted keys not yet supported)
+- `jwt_exp_secs` (`SNOWFLAKE_JWT_EXP_SECS`) – Optional JWT client assertion lifetime (default 60s)
+
+Example (programmatic):
+```
+{
+  "user": "MY_USER",
+  "account": "MY_ACCOUNT",
+  "url": "https://my-account-host",
+  "private_key_path": "/path/to/private_key.pem",
+  "jwt_exp_secs": 60
+}
+```
+```
+use snowpipe_streaming::{ConfigLocation, StreamingIngestClient};
+
+#[derive(serde::Serialize, Clone)]
+struct Row { id: u64 }
+
+# async fn run() -> Result<(), snowpipe_streaming::Error> {
+let client = StreamingIngestClient::<Row>::new(
+  "svc-client",
+  "DB",
+  "SCHEMA",
+  "PIPE",
+  ConfigLocation::File("config.json".into()),
+).await?;
+let mut ch = client.open_channel("ch").await?;
+ch.append_row(&Row{ id: 1 }).await?;
+ch.close().await?;
+# Ok(())
+# }
+```
+
 Close semantics:
 - `StreamingIngestChannel::close()` polls until Snowflake reports commits for all appended rows.
 - Warnings emit every minute after the first, and by default it times out after 5 minutes with `Error::Timeout`.

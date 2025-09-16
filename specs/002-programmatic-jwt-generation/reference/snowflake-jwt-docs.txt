@@ -1,0 +1,43 @@
+To generate a JWT token in your application code, use the following steps:
+
+Generate the fingerprint (a SHA-256 hash) of the public key for the user. Prefix the fingerprint with SHA256:.
+
+For example:
+
+SHA256:hash
+
+You can also execute the SQL DESCRIBE USER command to get the value from the RSA_PUBLIC_KEY_FP property.
+
+Generate a JSON Web Token (JWT) with the following fields in the payload:
+
+Field
+Description
+Example
+iss
+Issuer of the JWT. Set it to the following value:
+
+account_identifier.user.SHA256:public_key_fingerprint
+where:
+
+account_identifier is your Snowflake account identifier.
+
+If you are using the account locator, exclude any region information from the account locator.
+user is your Snowflake user name.
+SHA256:public_key_fingerprint is the fingerprint that you generated in the previous step.
+Note
+The account_identifier and user values must use all uppercase characters.
+MYORGANIZATION-MYACCOUNT.MYUSER.SHA256:public_key_fingerprint
+sub
+Subject for the JWT. Set it to the following value:
+
+account_identifier.user
+MYORGANIZATION-MYACCOUNT.MYUSER
+iat
+Issue time for the JWT in UTC. Set the value to the current time value as either seconds or milliseconds.
+1615370644 (seconds) 1615370644000 (milliseconds)
+exp
+Expiration time for the JWT in UTC. You can specify the value as either seconds or milliseconds.
+
+Note
+The JWT is valid for at most one hour after the token is issued, even if you specify a longer expiration time.
+1615374184 (seconds) 1615374184000 (milliseconds)

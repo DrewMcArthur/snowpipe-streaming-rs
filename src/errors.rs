@@ -10,6 +10,8 @@ pub enum Error {
     JwtError(std::process::Output),
     Config(String),
     Timeout(std::time::Duration),
+    Key(String),
+    JwtSign(String),
 }
 
 impl From<std::io::Error> for Error {
