@@ -78,6 +78,18 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
         Ok(bytes_written)
     }
 
+    /// Append many rows using any IntoIterator of rows. This is a convenience wrapper
+    /// around `append_rows` that avoids requiring a `&mut Iterator` at call sites.
+    pub async fn append_rows_iter<I>(&mut self, rows: I) -> Result<usize, Error>
+    where
+        I: IntoIterator<Item = R>,
+    {
+        let mut iter = rows.into_iter();
+        self.append_rows(&mut iter)
+            .await
+            .map_err(|e| e)
+    }
+
     async fn append_rows_call(&mut self, data: String) -> Result<(), Error> {
         if data.len() > MAX_REQUEST_SIZE {
             error!(

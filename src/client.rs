@@ -112,12 +112,12 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
     /// * `db_name` - The name of the database
     /// * `schema_name` - The name of the schema
     /// * `pipe_name` - The name of the pipe
-    /// * `profile_json` - Location to read profile config from.  Use "ENV" to read from environment variables
-    /// # ENV Vars
-    /// * `SNOWFLAKE_JWT_TOKEN` - The JWT token to use for authentication.  This can be generated using the `snowsql` command line tool
-    /// * `SNOWFLAKE_ACCOUNT` - The Snowflake account name
-    /// * `SNOWFLAKE_USERNAME` - The Snowflake username
-    /// * `SNOWFLAKE_URL` - The URL of the Snowflake account
+    /// * `config` - Explicit configuration (`Config`), typically loaded via `Config::from_file` or `Config::from_env`.
+    /// # ENV Vars (when using `Config::from_env`)
+    /// * `SNOWFLAKE_JWT_TOKEN` - Optional pre-supplied JWT for KEYPAIR_JWT auth
+    /// * `SNOWFLAKE_ACCOUNT` - Snowflake account name
+    /// * `SNOWFLAKE_USERNAME` - Snowflake username
+    /// * `SNOWFLAKE_URL` - Snowflake control-plane base URL
     pub async fn new(
         _client_name: &str,
         db_name: &str,
