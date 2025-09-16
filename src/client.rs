@@ -112,12 +112,12 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
     /// * `db_name` - The name of the database
     /// * `schema_name` - The name of the schema
     /// * `pipe_name` - The name of the pipe
-    /// * `profile_json` - Location to read profile config from.  Use "ENV" to read from environment variables
-    /// # ENV Vars
-    /// * `SNOWFLAKE_JWT_TOKEN` - The JWT token to use for authentication.  This can be generated using the `snowsql` command line tool
-    /// * `SNOWFLAKE_ACCOUNT` - The Snowflake account name
-    /// * `SNOWFLAKE_USERNAME` - The Snowflake username
-    /// * `SNOWFLAKE_URL` - The URL of the Snowflake account
+    /// * `config` - Explicit configuration (`Config`), typically loaded via `Config::from_file` or `Config::from_env`.
+    /// # ENV Vars (when using `Config::from_env`)
+    /// * `SNOWFLAKE_JWT_TOKEN` - Optional pre-supplied JWT for KEYPAIR_JWT auth
+    /// * `SNOWFLAKE_ACCOUNT` - Snowflake account name
+    /// * `SNOWFLAKE_USERNAME` - Snowflake username
+    /// * `SNOWFLAKE_URL` - Snowflake control-plane base URL
     pub async fn new(
         _client_name: &str,
         db_name: &str,
@@ -130,9 +130,15 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         } else {
             format!("https://{}", config.url)
         };
+        // Validate control host is a proper URL before performing any network calls
+        let _ = reqwest::Url::parse(&control_host).map_err(|e| {
+            Error::Config(format!(
+                "Invalid control host URL '{}': {}",
+                control_host, e
+            ))
+        })?;
         let jwt_token = config.jwt_token.clone();
         let account = config.account.clone();
-        // TODO: validate control host is a valid URL
         let mut client = StreamingIngestClient {
             _marker: PhantomData,
             db_name: db_name.to_string(),
@@ -204,7 +210,7 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
     async fn discover_ingest_host(&mut self) -> Result<(), Error> {
         let control_host = self.control_host.as_str();
         let url = format!("{control_host}/v2/streaming/hostname");
-        // TODO: pick up from where left off, read JWT from snowsql and private key
+        // Control-plane discovery per REST guide:
         // https://github.com/sfc-gh-chathomas/snowpipe-streaming-examples/tree/main/REST#step-1-discover-ingest-host
         let client = Client::new();
         let resp = client
@@ -309,28 +315,5 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
     pub fn close(&self) {}
 }
 
-// async fn fetch_jwt(account: &str, username: &str, private_key_path: &str) -> Result<String, Error> {
-//     unimplemented!("This doesn't work due to snowsql's stdout handling");
-// let mut child  = Command::new("snowsql")
-//     .args(&[
-//         "-a",
-//         account,
-//         "-u",
-//         username,
-//         "--private-key-path",
-//         private_key_path,
-//         "--generate-jwt",
-//     ])
-//     .stdin(Stdio::piped()).spawn()?;
-
-// if let Some(_) = child.stdin.take() { }
-
-// let output = child.wait_with_output()?;
-
-// if !output.status.success() {
-//     return Err(Error::from(output));
-// }
-
-// let jwt_token = String::from_utf8_lossy(&output.stdout).trim().to_string();
-// Ok(jwt_token)
-// }
+// Legacy snowsql-based JWT generation was explored but not used; programmatic
+// OAuth2 control-plane token acquisition is implemented instead.

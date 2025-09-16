@@ -1,55 +1,25 @@
-use snowpipe_streaming::StreamingIngestClient;
+use snowpipe_streaming::{Config, StreamingIngestClient};
 
-#[tokio::main]
-async fn main() {
-    let max_rows = 100_000;
-    let poll_attempts = 30;
-    let poll_interval_ms = 1000;
+#[derive(serde::Serialize, Clone)]
+struct Row {
+    id: u64,
+}
 
-    // Create Snowflake Streaming Ingest Client
-    let uuid = uuid();
-    let client = StreamingIngestClient::<Row>::new(
-        client_name = format!("MY_CLIENT_{uuid}"),
-        db_name = "MY_DATABASE",
-        schema_name = "MY_SCHEMA",
-        pipe_name = "MY_PIPE",
-        profile_json = "profile.json", //depends on your folder structure
-    )
-    .await
-    .expect("failed to create client");
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Optional: enable basic logging for the example
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
-    // Open a channel for data ingestion
-    let channel_uuid = uuid();
-    let channel_name = format!("my_channel_{channel_uuid}");
-    let channel = client.open_channel(channel_name);
-    info!("Channel opened: {channel_name}");
+    // Load configuration from a JSON file placed next to the binary
+    let cfg = Config::from_file("config.json")?;
+    let client =
+        StreamingIngestClient::<Row>::new("EXAMPLE_CLIENT", "MY_DB", "MY_SCHEMA", "MY_PIPE", cfg)
+            .await?;
 
-    // Ingest rows
-    info!("Ingesting {max_rows} rows");
-    for i in 0..max_rows {
-        let row_id = str(i);
-        let row = Row {
-            c1: i,
-            c2: row_id,
-            ts: Datetime::now(),
-        };
-        channel.append_row(row, row_id);
-    }
-
-    // Wait for ingestion to complete
-    for attempt in 0..poll_attempts {
-        latest_offset = channel.get_latest_committed_offset_token();
-        println!("Latest offset token: {latest_offset}");
-        if latest_offset == max_rows - 1 {
-            println!("All data committed successfully");
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(poll_interval_ms));
-    }
-
-    // Close resources
-    channel.close();
-    client.close();
-
-    println!("Data ingestion completed");
+    let mut ch = client.open_channel("example_channel").await?;
+    ch.append_row(&Row { id: 1 }).await?;
+    ch.append_rows_iter(vec![Row { id: 2 }, Row { id: 3 }])
+        .await?;
+    ch.close().await?;
+    Ok(())
 }

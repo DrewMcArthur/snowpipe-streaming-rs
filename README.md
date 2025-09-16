@@ -2,7 +2,7 @@
 
 **WARNING: DEFINITELY NOT PRODUCTION READY**
 
-This library is meant to replicate the python api interface, to allow users to stream data to snowflake via the snowpipe streaming API.  This is a naive implementation, since the Python and Java SDKs are not open source, so I'm guessing based off the REST guide and the external visibility of the Python SDK.
+This library provides a Rust client to stream data to Snowflake via the Snowpipe Streaming API. It mirrors the Python SDK’s ergonomics where reasonable, implemented against the public REST documentation. The official Python and Java SDKs aren’t open source, so this implementation follows the REST guide and observed behavior.
 
 ## References
 - [Python SDK Guide](https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-getting-started)
@@ -10,23 +10,69 @@ This library is meant to replicate the python api interface, to allow users to s
 - [REST Guide](https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-rest-tutorial)
 
 
-## TODO
-- check flows and make sure it all works, get example working
-- add `append_rows` function, accepting a `Vec<RowType>`
-- create a `BufferedClient`, which batches `append_row` requests, to speed up / minimize HTTP throughput
-- documentation! doctests!
-- mock http server? 
-- change how client is created, use a builder or the model that has different structs for different stages so that errors are less possible, like what's described [here](https://blog.systems.ethz.ch/blog/2018/a-hammer-you-can-only-hold-by-the-handle.html)
-- hide aws behind feature flag
+## Installation
+
+This crate is not published yet. Add it via a path (local checkout) or a Git URL:
+
+```
+[dependencies]
+# Local path
+snowpipe-streaming = { path = "." }
+
+# Or Git (replace with your fork/URL)
+# snowpipe-streaming = { git = "https://github.com/<you>/snowpipe-streaming-rs", rev = "<sha>" }
+```
+
+Minimum supported Rust: stable toolchain compatible with edition declared in `Cargo.toml`.
+
+## Quickstart
+
+```
+use snowpipe_streaming::{Config, StreamingIngestClient};
+
+#[derive(serde::Serialize, Clone)]
+struct Row { id: u64 }
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+  // config.json example below
+  let cfg = Config::from_file("config.json")?;
+  let client = StreamingIngestClient::<Row>::new(
+    "svc-client", "DB", "SCHEMA", "PIPE", cfg,
+  ).await?;
+
+  let mut ch = client.open_channel("ch").await?;
+  ch.append_row(&Row { id: 1 }).await?;
+  // Or batch
+  let rows = vec![Row { id: 2 }, Row { id: 3 }];
+  ch.append_rows_iter(rows).await?;
+  ch.close().await?;
+  Ok(())
+}
+```
+
+Example `config.json`:
+```
+{
+  "user": "MY_USER",
+  "account": "MY_ACCOUNT",
+  "url": "https://my-account-host",
+  "jwt_token": "<optional, see Auth modes>",
+  "private_key": "<optional PEM, or use private_key_path>",
+  "private_key_path": "/path/to/private_key.pem",
+  "private_key_passphrase": "<optional for encrypted keys>",
+  "jwt_exp_secs": 60
+}
+```
 
 ## Testing
 - Run all tests: `cargo test`.
 - Integration tests use a local mocked HTTP server (wiremock) to emulate Snowflake endpoints; they do not require network or real credentials.
-- Configuration for tests is passed via a JSON file using `ConfigLocation::File` to avoid process‑wide env races.
+- Tests use a per-test JSON config file to avoid process-wide env races.
 
 Example test setup (simplified):
 ```
-use snowpipe_streaming::{ConfigLocation, StreamingIngestClient};
+use snowpipe_streaming::{Config, StreamingIngestClient};
 
 // Write a minimal config file for the test
 let cfg_path = "target/test-config.json";
@@ -39,7 +85,7 @@ std::fs::write(cfg_path, r#"{
 
 // Construct client using file config
 let client = StreamingIngestClient::<YourRow>::new(
-    "test-client", "db", "schema", "pipe", ConfigLocation::File(cfg_path.into())
+    "test-client", "db", "schema", "pipe", Config::from_file(cfg_path)?
 ).await?;
 ```
 
@@ -47,8 +93,8 @@ let client = StreamingIngestClient::<YourRow>::new(
 
 Two options are supported:
 
-- Pre-supplied JWT (existing): Provide `SNOWFLAKE_JWT_TOKEN` (or `jwt_token` in config). The client uses `KEYPAIR_JWT` for control-plane calls.
-- Programmatic JWT generation (new): Provide a private key (string or file path), and the client generates a control-plane access token via the Snowflake OAuth2 endpoint.
+- Pre-supplied JWT: Provide `SNOWFLAKE_JWT_TOKEN` (or `jwt_token` in config). The client uses `KEYPAIR_JWT` for control-plane calls.
+- Programmatic OAuth2 token generation: Provide a private key (string or file path). The client generates a control-plane access token via the Snowflake `/oauth2/token` endpoint.
 
 Config fields (JSON file or env):
 - `user` (`SNOWFLAKE_USERNAME`) – Snowflake user identifier
@@ -70,7 +116,7 @@ Example (programmatic):
 }
 ```
 ```
-use snowpipe_streaming::{ConfigLocation, StreamingIngestClient};
+use snowpipe_streaming::{Config, StreamingIngestClient};
 
 #[derive(serde::Serialize, Clone)]
 struct Row { id: u64 }
@@ -81,7 +127,7 @@ let client = StreamingIngestClient::<Row>::new(
   "DB",
   "SCHEMA",
   "PIPE",
-  ConfigLocation::File("config.json".into()),
+  Config::from_file("config.json")?,
 ).await?;
 let mut ch = client.open_channel("ch").await?;
 ch.append_row(&Row{ id: 1 }).await?;
@@ -94,3 +140,33 @@ Close semantics:
 - `StreamingIngestChannel::close()` polls until Snowflake reports commits for all appended rows.
 - Warnings emit every minute after the first, and by default it times out after 5 minutes with `Error::Timeout`.
 - You can override the timeout with `close_with_timeout(std::time::Duration::from_secs(30))`.
+
+## Batching and limits
+- `append_row(&T)` appends a single row.
+- `append_rows_iter<I>(I)` accepts any `IntoIterator<Item = T>` and batches requests up to 16MB per HTTP call.
+- Requests larger than 16MB fail with `Error::DataTooLarge(actual, max)`; adjust batch size or row size accordingly.
+
+## Errors and logging
+- Common errors: HTTP failures, invalid/missing configuration, private key parsing/decryption issues, request too large.
+- Enable logs with `tracing_subscriber` in tests/examples to observe discovery, token acquisition, and ingestion progress.
+
+## Examples
+- A minimal example is available at `examples/example.rs` (requires the `unstable-example` feature).
+- Integration test flows in `tests/integration.rs` demonstrate discovery, token paths, open/append/status/close.
+
+## Compatibility
+- Requires a Rust toolchain that supports the edition declared in `Cargo.toml` (2024 edition).
+- Tested on recent stable Rust on macOS/Linux.
+
+## Contributing
+- PRs and issues are welcome. Keep changes minimal and focused.
+- Run `cargo test` before submitting. Include/revise examples and docs as needed.
+
+## Security
+- Do not commit secrets (JWTs, private keys, passphrases). Use env vars or secure secret stores.
+- Prefer `private_key_path` over embedding PEM strings in files checked into source control.
+
+## Roadmap
+- Buffered client for adaptive batching
+- Builder-style client and clearer type-state for construction
+- Documentation polish and doctests

@@ -46,7 +46,8 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
         }
     }
 
-    /// TODO: can use the same POST to send multiple newline-delimited rows in the body, up to 16MB
+    /// Batches are sent as newline-delimited JSON rows in a single POST body
+    /// up to 16MB per request, matching Snowflake Snowpipe Streaming guidance.
     pub async fn append_row(&mut self, row: &R) -> Result<(), Error> {
         let data = serde_json::to_string(row).expect("Failed to serialize row");
         self.append_rows_call(data).await?;
@@ -76,6 +77,16 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             self.append_rows_call(req).await?;
         }
         Ok(bytes_written)
+    }
+
+    /// Append many rows using any IntoIterator of rows. This is a convenience wrapper
+    /// around `append_rows` that avoids requiring a `&mut Iterator` at call sites.
+    pub async fn append_rows_iter<I>(&mut self, rows: I) -> Result<usize, Error>
+    where
+        I: IntoIterator<Item = R>,
+    {
+        let mut iter = rows.into_iter();
+        self.append_rows(&mut iter).await
     }
 
     async fn append_rows_call(&mut self, data: String) -> Result<(), Error> {

@@ -37,3 +37,43 @@ impl From<std::process::Output> for Error {
         Error::JwtError(output)
     }
 }
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Io(e) => write!(f, "IO error: {}", e),
+            Error::Json(e) => write!(f, "JSON error: {}", e),
+            Error::Http(e) => write!(f, "HTTP error: {}", e),
+            Error::IngestHostDiscovery(code, body) => {
+                write!(
+                    f,
+                    "Ingest host discovery failed: status={} body={}",
+                    code, body
+                )
+            }
+            Error::DataTooLarge(actual, max) => {
+                write!(
+                    f,
+                    "Data too large: actual={} bytes > max={} bytes",
+                    actual, max
+                )
+            }
+            Error::JwtError(_) => write!(f, "JWT generation process failed"),
+            Error::Config(msg) => write!(f, "Config error: {}", msg),
+            Error::Timeout(d) => write!(f, "Operation timed out after {:?}", d),
+            Error::Key(msg) => write!(f, "Key error: {}", msg),
+            Error::JwtSign(msg) => write!(f, "JWT signing error: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Io(e) => Some(e),
+            Error::Json(e) => Some(e),
+            Error::Http(e) => Some(e),
+            _ => None,
+        }
+    }
+}
