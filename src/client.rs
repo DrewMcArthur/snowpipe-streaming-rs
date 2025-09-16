@@ -7,11 +7,7 @@ use rsa::pkcs1::EncodeRsaPrivateKey;
 use serde::Serialize;
 use tracing::{error, info};
 
-use crate::{
-    channel::StreamingIngestChannel,
-    config::{ConfigLocation, read_config},
-    errors::Error,
-};
+use crate::{channel::StreamingIngestChannel, config::Config, errors::Error};
 
 fn generate_assertion(url: &str, cfg: &crate::config::Config) -> Result<String, Error> {
     let iss = cfg.user.clone();
@@ -127,9 +123,8 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         db_name: &str,
         schema_name: &str,
         pipe_name: &str,
-        profile_json: ConfigLocation,
+        config: Config,
     ) -> Result<Self, Error> {
-        let config = read_config(profile_json).await?;
         let control_host = if config.url.starts_with("http") {
             config.url.clone()
         } else {
