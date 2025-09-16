@@ -154,6 +154,18 @@ Close semantics:
 - A minimal example is available at `examples/example.rs` (requires the `unstable-example` feature).
 - Integration test flows in `tests/integration.rs` demonstrate discovery, token paths, open/append/status/close.
 
+## Compatibility
+- Requires a Rust toolchain that supports the edition declared in `Cargo.toml` (2024 edition).
+- Tested on recent stable Rust on macOS/Linux.
+
+## Contributing
+- PRs and issues are welcome. Keep changes minimal and focused.
+- Run `cargo test` before submitting. Include/revise examples and docs as needed.
+
+## Security
+- Do not commit secrets (JWTs, private keys, passphrases). Use env vars or secure secret stores.
+- Prefer `private_key_path` over embedding PEM strings in files checked into source control.
+
 ## Roadmap
 - Buffered client for adaptive batching
 - Builder-style client and clearer type-state for construction
