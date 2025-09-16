@@ -18,7 +18,7 @@ fn generate_assertion(url: &str, cfg: &crate::config::Config) -> Result<String, 
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| Error::Config(format!("Time error: {e}")))?
         .as_secs() as usize;
-    let exp_secs = cfg.jwt_exp_secs.unwrap_or(60) as usize;
+    let exp_secs = cfg.jwt_exp_secs.unwrap_or(3600) as usize;
     let exp = iat + exp_secs;
     let jti = uuid::Uuid::new_v4().to_string();
 
