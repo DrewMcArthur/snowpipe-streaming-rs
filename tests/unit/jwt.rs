@@ -1,4 +1,6 @@
 use snowpipe_streaming::Error;
+use pkcs8::EncodePrivateKey;
+use rsa::pkcs1::EncodeRsaPrivateKey;
 
 #[test]
 fn encrypted_pkcs8_decrypts_to_encoding_key() {

@@ -16,4 +16,5 @@
 
 ## Polish
 - [x] T006 Update README Auth section to include passphrase support and limitations
-- [ ] T007 clippy/fmt/tests
+- [x] T007 clippy/fmt/tests (CI)
+- [x] T008 Optimize tests: use pre-generated assertion in integration tests; keep decryption/signing in unit test to reduce runtime

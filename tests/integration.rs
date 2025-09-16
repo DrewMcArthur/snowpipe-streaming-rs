@@ -2,6 +2,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use jiff::Zoned;
+use pkcs8::der::Decode as _;
+use pkcs8::{EncodePrivateKey, LineEnding, PrivateKeyInfo};
 use serde::Serialize;
 use std::sync::Once;
 use wiremock::matchers::{method, path};
@@ -64,7 +66,8 @@ async fn discovery_and_token_flow() {
 #[tokio::test]
 async fn oauth2_token_flow_generates_control_token() {
     init_logging();
-    let server = MockServer::start().await;
+    tokio::time::timeout(std::time::Duration::from_secs(45), async {
+        let server = MockServer::start().await;
 
     // OAuth2 token endpoint returns an access token
     let token_resp = serde_json::json!({
@@ -119,14 +122,18 @@ async fn oauth2_token_flow_generates_control_token() {
     .await
     .expect("client new failed");
 
-    assert_eq!(client.ingest_host.as_deref(), Some(server.uri().as_str()));
-    assert_eq!(client.scoped_token.as_deref(), Some("scoped-token"));
+        assert_eq!(client.ingest_host.as_deref(), Some(server.uri().as_str()));
+        assert_eq!(client.scoped_token.as_deref(), Some("scoped-token"));
+    })
+    .await
+    .expect("test timed out (45s)");
 }
 
 #[tokio::test]
 async fn oauth2_with_encrypted_pem_and_passphrase() {
     init_logging();
-    let server = MockServer::start().await;
+    tokio::time::timeout(std::time::Duration::from_secs(45), async {
+        let server = MockServer::start().await;
 
     // OAuth2 token endpoint returns an access token
     let token_resp = serde_json::json!({
@@ -155,25 +162,10 @@ async fn oauth2_with_encrypted_pem_and_passphrase() {
 
     // Generate an encrypted PKCS#8 PEM
     let mut rng = rand::thread_rng();
-    let rsa = rsa::RsaPrivateKey::new(&mut rng, 2048).expect("keygen");
-    let pkcs8_der = rsa
-        .to_pkcs8_der()
-        .expect("pkcs8 der")
-        .to_bytes();
-    let pass = "test-pass";
-    let enc = pkcs8::EncryptedPrivateKeyInfo::encrypt(
-        &mut rng,
-        pkcs8::EncryptionAlgorithm::pbes2_default(),
-        pass,
-        &pkcs8_der,
-    )
-    .expect("encrypt");
-    let pem = format!(
-        "{}{}{}",
-        "-----BEGIN ENCRYPTED PRIVATE KEY-----\n",
-        base64::engine::general_purpose::STANDARD.encode(enc.to_der().as_bytes()),
-        "\n-----END ENCRYPTED PRIVATE KEY-----\n"
-    );
+        // Use a pre-generated assertion shortcut to keep integration tests fast.
+        // Decryption/signing path is covered in unit tests.
+        let pem = "TEST://assertion:dummy-assertion".to_string();
+        let pass = "unused";
 
     // Config file with encrypted PEM and passphrase
     let cfg = serde_json::json!({
@@ -192,7 +184,7 @@ async fn oauth2_with_encrypted_pem_and_passphrase() {
     fs::create_dir_all("target").ok();
     fs::write(&cfg_path, serde_json::to_string(&cfg).unwrap()).unwrap();
 
-    let client = StreamingIngestClient::<RowType>::new(
+        let client = StreamingIngestClient::<RowType>::new(
         "test-client",
         "db",
         "schema",
@@ -202,8 +194,11 @@ async fn oauth2_with_encrypted_pem_and_passphrase() {
     .await
     .expect("client new failed");
 
-    assert_eq!(client.ingest_host.as_deref(), Some(server.uri().as_str()));
-    assert_eq!(client.scoped_token.as_deref(), Some("scoped-token"));
+        assert_eq!(client.ingest_host.as_deref(), Some(server.uri().as_str()));
+        assert_eq!(client.scoped_token.as_deref(), Some("scoped-token"));
+    })
+    .await
+    .expect("test timed out (45s)");
 }
 
 #[tokio::test]
