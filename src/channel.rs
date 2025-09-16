@@ -1,9 +1,10 @@
 use reqwest::Client;
 use serde::Serialize;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
-    types::{AppendRowsResponse, ChannelStatus, OpenChannelResponse}, Error, StreamingIngestClient
+    Error, StreamingIngestClient,
+    types::{AppendRowsResponse, ChannelStatus, OpenChannelResponse},
 };
 
 const MAX_REQUEST_SIZE: usize = 16 * 1024 * 1024; // 16MB
@@ -29,13 +30,12 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             .clone()
             .unwrap_or("0".to_string())
             .parse()
-            .expect(
-                format!(
+            .unwrap_or_else(|_| {
+                panic!(
                     "Failed to parse last_committed_offset_token from response: {:?}",
                     resp.channel_status.last_committed_offset_token
                 )
-                .as_str(),
-            );
+            });
         StreamingIngestChannel {
             _marker: std::marker::PhantomData,
             client: client.clone(),
@@ -59,7 +59,13 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             .map(|r| serde_json::to_string(&r))
             .collect::<Result<Vec<String>, serde_json::Error>>()?;
         let row_size = serialized_rows.first().map(|r| r.len()).unwrap_or(0);
-        let chunk_size = MAX_REQUEST_SIZE / (2 * row_size + 1); // +1 for newline
+        let chunk_size = if row_size == 0 {
+            MAX_REQUEST_SIZE
+        } else {
+            let denom = 2 * row_size + 1; // +1 for newline
+            let cs = MAX_REQUEST_SIZE / denom;
+            cs.max(1)
+        };
         let requests = serialized_rows
             .chunks(chunk_size)
             .map(|batch| batch.join("\n"))
@@ -74,18 +80,33 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
 
     async fn append_rows_call(&mut self, data: String) -> Result<(), Error> {
         if data.len() > MAX_REQUEST_SIZE {
-            error!("Data size {} exceeds maximum request size {}", data.len(), MAX_REQUEST_SIZE);
+            error!(
+                "Data size {} exceeds maximum request size {}",
+                data.len(),
+                MAX_REQUEST_SIZE
+            );
             return Err(Error::DataTooLarge(data.len(), MAX_REQUEST_SIZE));
         }
 
-        info!("Appending data of size {}", data.len());
+        info!(
+            "append rows: channel='{}' bytes={}",
+            self.channel_name,
+            data.len()
+        );
         let offset = self.last_pushed_offset_token + 1;
+        let ingest = self
+            .client
+            .ingest_host
+            .as_ref()
+            .expect("ingest_host not set");
+        let base = if ingest.contains("://") {
+            ingest.trim_end_matches('/').to_string()
+        } else {
+            format!("https://{}", ingest)
+        };
         let url = format!(
-            "https://{}/v2/streaming/data/databases/{}/schemas/{}/pipes/{}/channels/{}/rows?continuationToken={}&offsetToken={}",
-            self.client
-                .ingest_host
-                .as_ref()
-                .expect("ingest_host not set"),
+            "{}/v2/streaming/data/databases/{}/schemas/{}/pipes/{}/channels/{}/rows?continuationToken={}&offsetToken={}",
+            base,
             self.client.db_name,
             self.client.schema_name,
             self.client.pipe_name,
@@ -118,6 +139,10 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
 
         self.last_pushed_offset_token = offset;
         self.continuation_token = resp.next_continuation_token;
+        info!(
+            "append rows ok: channel='{}' pushed_offset={} next_ctok='{}'",
+            self.channel_name, self.last_pushed_offset_token, self.continuation_token
+        );
         Ok(())
     }
 
@@ -130,15 +155,19 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
 
     async fn get_channel_status(&mut self) -> Result<(), Error> {
         let client = Client::new();
+        let ingest = self
+            .client
+            .ingest_host
+            .as_ref()
+            .expect("ingest_host not set");
+        let base = if ingest.contains("://") {
+            ingest.trim_end_matches('/').to_string()
+        } else {
+            format!("https://{}", ingest)
+        };
         let url = format!(
-            "https://{}/v2/streaming/databases/{}/schemas/{}/pipes/{}:bulk-channel-status",
-            self.client
-                .ingest_host
-                .as_ref()
-                .expect("ingest_host not set"),
-            self.client.db_name,
-            self.client.schema_name,
-            self.client.pipe_name,
+            "{}/v2/streaming/databases/{}/schemas/{}/pipes/{}:bulk-channel-status",
+            base, self.client.db_name, self.client.schema_name, self.client.pipe_name,
         );
 
         let resp = client
@@ -172,17 +201,20 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
 
         match status {
             Some(Ok(status)) => {
-                info!("Channel Status: {:?}", status);
+                info!(
+                    "channel status: committed={:?}",
+                    status.last_committed_offset_token
+                );
                 self.last_committed_offset_token = status.last_committed_offset_token .clone()
             .unwrap_or("0".to_string())
             .parse()
-            .expect(format!(
+            .unwrap_or_else(|_| panic!(
                 "Failed to parse last_committed_offset_token while getting channel status {:?}",
-                status.last_committed_offset_token,
-            ).as_str());
+                status.last_committed_offset_token
+            ));
             }
             s => {
-                error!("Failed to parse channel status: {:?}", s);
+                error!("channel status parse failed: {:?}", s);
             }
         }
 
@@ -190,19 +222,56 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
     }
 
     pub async fn close(&mut self) -> Result<(), Error> {
+        self.close_with_timeout(std::time::Duration::from_secs(5 * 60))
+            .await
+    }
+
+    pub async fn close_with_timeout(&mut self, timeout: std::time::Duration) -> Result<(), Error> {
+        let start = tokio::time::Instant::now();
+        let mut last_warn_minute = 0u64;
         while self.last_committed_offset_token < self.last_pushed_offset_token {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             self.get_channel_status()
                 .await
                 .expect("Failed to get channel status");
+
+            let elapsed = start.elapsed();
+            let elapsed_mins = elapsed.as_secs() / 60;
+            if elapsed_mins >= 1 && elapsed_mins > last_warn_minute {
+                last_warn_minute = elapsed_mins;
+                warn!(
+                    "Channel '{}' close is still waiting after {} minute(s); committed={} pushed={}",
+                    self.channel_name,
+                    elapsed_mins,
+                    self.last_committed_offset_token,
+                    self.last_pushed_offset_token
+                );
+            }
+            if elapsed >= timeout {
+                error!(
+                    "Channel '{}' close timed out after {:?}; committed={} pushed={}",
+                    self.channel_name,
+                    timeout,
+                    self.last_committed_offset_token,
+                    self.last_pushed_offset_token
+                );
+                return Err(Error::Timeout(timeout));
+            }
         }
 
+        let ingest = self
+            .client
+            .ingest_host
+            .as_ref()
+            .expect("ingest_host not set");
+        let base = if ingest.contains("://") {
+            ingest.trim_end_matches('/').to_string()
+        } else {
+            format!("https://{}", ingest)
+        };
         let url = format!(
-            "https://{}/v2/streaming/databases/{}/schemas/{}/pipes/{}/channels/{}",
-            self.client
-                .ingest_host
-                .as_ref()
-                .expect("ingest_host not set"),
+            "{}/v2/streaming/databases/{}/schemas/{}/pipes/{}/channels/{}",
+            base,
             self.client.db_name,
             self.client.schema_name,
             self.client.pipe_name,
@@ -228,6 +297,10 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             .await?
             .error_for_status()?;
 
+        info!("channel closed: name='{}'", self.channel_name);
+
         Ok(())
     }
 }
+
+// (Unit tests live in integration to avoid constructing private client internals.)

@@ -1,16 +1,21 @@
-name: check
+name: ci
 
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  lint:
+  build-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -19,10 +24,17 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-build-cache
+            target
+          key: cargo-build-cache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Check
-        run: cargo check
-    
-      # - name: Lint
-      #   run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo check --all-targets
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Test
+        run: cargo test --all-targets --quiet

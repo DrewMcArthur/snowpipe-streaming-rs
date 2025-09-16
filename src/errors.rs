@@ -9,6 +9,7 @@ pub enum Error {
     DataTooLarge(usize, usize),
     JwtError(std::process::Output),
     Config(String),
+    Timeout(std::time::Duration),
 }
 
 impl From<std::io::Error> for Error {

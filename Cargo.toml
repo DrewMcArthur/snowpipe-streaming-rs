@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[features]
+unstable-example = []
+
 [dependencies]
 aws-config = { version = "1.8.6" }
 aws-sdk-secretsmanager = { version = "1.87.0" }
@@ -13,3 +16,12 @@ serde = "1.0.219"
 serde_json = "1.0.143"
 tokio = { version = "1.47.1", features = ["macros", "rt"] }
 tracing = { version = "0.1.41" }
+
+[dev-dependencies]
+wiremock = "0.6.0"
+tracing-subscriber = "0.3.18"
+
+[[example]]
+name = "example"
+path = "examples/example.rs"
+required-features = ["unstable-example"]

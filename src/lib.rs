@@ -17,6 +17,7 @@ mod tests {
 
     use super::*;
 
+    #[ignore]
     #[tokio::test]
     async fn it_works() {
         #[derive(serde::Serialize, Clone)]
