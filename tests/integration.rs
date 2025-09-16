@@ -124,6 +124,89 @@ async fn oauth2_token_flow_generates_control_token() {
 }
 
 #[tokio::test]
+async fn oauth2_with_encrypted_pem_and_passphrase() {
+    init_logging();
+    let server = MockServer::start().await;
+
+    // OAuth2 token endpoint returns an access token
+    let token_resp = serde_json::json!({
+        "access_token": "cp-token",
+        "token_type": "Bearer",
+        "expires_in": 3600
+    })
+    .to_string();
+    Mock::given(method("POST"))
+        .and(path("/oauth2/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(token_resp))
+        .mount(&server)
+        .await;
+
+    // Ingest discovery and scoped token
+    Mock::given(method("GET"))
+        .and(path("/v2/streaming/hostname"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(server.uri()))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("scoped-token"))
+        .mount(&server)
+        .await;
+
+    // Generate an encrypted PKCS#8 PEM
+    let mut rng = rand::thread_rng();
+    let rsa = rsa::RsaPrivateKey::new(&mut rng, 2048).expect("keygen");
+    let pkcs8_der = rsa
+        .to_pkcs8_der()
+        .expect("pkcs8 der")
+        .to_bytes();
+    let pass = "test-pass";
+    let enc = pkcs8::EncryptedPrivateKeyInfo::encrypt(
+        &mut rng,
+        pkcs8::EncryptionAlgorithm::pbes2_default(),
+        pass,
+        &pkcs8_der,
+    )
+    .expect("encrypt");
+    let pem = format!(
+        "{}{}{}",
+        "-----BEGIN ENCRYPTED PRIVATE KEY-----\n",
+        base64::engine::general_purpose::STANDARD.encode(enc.to_der().as_bytes()),
+        "\n-----END ENCRYPTED PRIVATE KEY-----\n"
+    );
+
+    // Config file with encrypted PEM and passphrase
+    let cfg = serde_json::json!({
+        "user": "user",
+        "account": "acct",
+        "url": server.uri(),
+        "private_key": pem,
+        "private_key_passphrase": pass,
+        "jwt_exp_secs": 60
+    });
+    let mut cfg_path = PathBuf::from("target");
+    cfg_path.push(format!(
+        "test-config-oauth2-encrypted-{}.json",
+        server.address().port()
+    ));
+    fs::create_dir_all("target").ok();
+    fs::write(&cfg_path, serde_json::to_string(&cfg).unwrap()).unwrap();
+
+    let client = StreamingIngestClient::<RowType>::new(
+        "test-client",
+        "db",
+        "schema",
+        "pipe",
+        ConfigLocation::File(cfg_path.to_string_lossy().to_string()),
+    )
+    .await
+    .expect("client new failed");
+
+    assert_eq!(client.ingest_host.as_deref(), Some(server.uri().as_str()));
+    assert_eq!(client.scoped_token.as_deref(), Some("scoped-token"));
+}
+
+#[tokio::test]
 async fn open_append_status_close_flow() {
     init_logging();
     let server = MockServer::start().await;
