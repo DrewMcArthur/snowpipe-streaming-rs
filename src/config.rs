@@ -11,6 +11,7 @@ pub enum ConfigLocation {
 }
 
 #[derive(serde::Deserialize)]
+#[allow(dead_code)]
 pub struct Config {
     pub user: String,
     pub account: String,
@@ -67,4 +68,41 @@ async fn read_config_from_secret() -> Result<Config, Error> {
     }?;
     let config: Config = serde_json::from_str(secret)?;
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn env_success() {
+        let _g = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("SNOWFLAKE_USERNAME", "user");
+            std::env::set_var("SNOWFLAKE_ACCOUNT", "acct");
+            std::env::set_var("SNOWFLAKE_URL", "https://example");
+            std::env::set_var("SNOWFLAKE_JWT_TOKEN", "jwt");
+        }
+        let cfg = read_config_from_env().expect("env config");
+        assert_eq!(cfg.user, "user");
+        assert_eq!(cfg.account, "acct");
+        assert_eq!(cfg.url, "https://example");
+        assert_eq!(cfg.jwt_token, "jwt");
+    }
+
+    #[test]
+    fn env_missing_vars() {
+        let _g = ENV_LOCK.lock().unwrap();
+        // Clear vars and test each missing case
+        unsafe {
+            std::env::remove_var("SNOWFLAKE_USERNAME");
+            std::env::remove_var("SNOWFLAKE_ACCOUNT");
+            std::env::remove_var("SNOWFLAKE_URL");
+            std::env::remove_var("SNOWFLAKE_JWT_TOKEN");
+        }
+        assert!(matches!(read_config_from_env(), Err(Error::Config(_))));
+    }
 }

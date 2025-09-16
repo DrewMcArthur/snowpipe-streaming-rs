@@ -1,0 +1,19 @@
+{
+  "next_continuation_token": "ctok-1",
+  "channel_status": {
+    "database_name": "db",
+    "schema_name": "schema",
+    "pipe_name": "pipe",
+    "channel_name": "ch",
+    "channel_status_code": "OPEN",
+    "last_committed_offset_token": "0",
+    "created_on_ms": 0,
+    "rows_inserted": 0,
+    "rows_parsed": 0,
+    "rows_errors": 0,
+    "last_error_offset_upper_bound": null,
+    "last_error_message": null,
+    "last_error_timestamp": null,
+    "snowflake_avg_processing_latency_ms": 0
+  }
+}

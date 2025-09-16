@@ -18,3 +18,32 @@ This library is meant to replicate the python api interface, to allow users to s
 - mock http server? 
 - change how client is created, use a builder or the model that has different structs for different stages so that errors are less possible, like what's described [here](https://blog.systems.ethz.ch/blog/2018/a-hammer-you-can-only-hold-by-the-handle.html)
 - hide aws behind feature flag
+
+## Testing
+- Run all tests: `cargo test`.
+- Integration tests use a local mocked HTTP server (wiremock) to emulate Snowflake endpoints; they do not require network or real credentials.
+- Configuration for tests is passed via a JSON file using `ConfigLocation::File` to avoid process‑wide env races.
+
+Example test setup (simplified):
+```
+use snowpipe_streaming::{ConfigLocation, StreamingIngestClient};
+
+// Write a minimal config file for the test
+let cfg_path = "target/test-config.json";
+std::fs::write(cfg_path, r#"{
+  "user": "user",
+  "account": "acct",
+  "url": "http://127.0.0.1:12345", // wiremock server URI
+  "jwt_token": "jwt"
+}"#)?;
+
+// Construct client using file config
+let client = StreamingIngestClient::<YourRow>::new(
+    "test-client", "db", "schema", "pipe", ConfigLocation::File(cfg_path.into())
+).await?;
+```
+
+Close semantics:
+- `StreamingIngestChannel::close()` polls until Snowflake reports commits for all appended rows.
+- Warnings emit every minute after the first, and by default it times out after 5 minutes with `Error::Timeout`.
+- You can override the timeout with `close_with_timeout(std::time::Duration::from_secs(30))`.

@@ -91,13 +91,11 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         if status.is_success() {
+            info!("discover ingest host ok: host='{}'", body);
             self.ingest_host = Some(body);
             Ok(())
         } else {
-            error!(
-                "Failed to discover ingest host: {}",
-                body
-            );
+            error!("discover ingest host failed: status={} body='{}'", status, body);
             Err(Error::IngestHostDiscovery(status, body))
         }
     }
@@ -119,7 +117,9 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             .send()
             .await?
             .error_for_status()?;
-        self.scoped_token = Some(resp.text().await?);
+        let tok = resp.text().await?;
+        info!("scoped token acquired (len={})", tok.len());
+        self.scoped_token = Some(tok);
         Ok(())
     }
 
@@ -128,13 +128,19 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         channel_name: &str,
     ) -> Result<StreamingIngestChannel<R>, Error> {
         let ingest_host = self.ingest_host.as_ref().expect("Ingest host not set");
+        let base = if ingest_host.contains("://") {
+            ingest_host.trim_end_matches('/').to_string()
+        } else {
+            format!("https://{}", ingest_host)
+        };
         let db = self.db_name.as_str();
         let schema = self.schema_name.as_str();
         let pipe = self.pipe_name.as_str();
 
         let client = Client::new();
         let url = format!(
-            "https://{ingest_host}/v2/streaming/databases/{db}/schemas/{schema}/pipes/{pipe}/channels/{channel_name}"
+            "{}/v2/streaming/databases/{db}/schemas/{schema}/pipes/{pipe}/channels/{channel_name}",
+            base
         );
 
         let resp = client
@@ -155,7 +161,10 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             .json()
             .await?;
 
-        info!("Channel opened: {}", channel_name);
+        info!(
+            "channel opened: name='{}' db='{}' schema='{}' pipe='{}'",
+            channel_name, self.db_name, self.schema_name, self.pipe_name
+        );
 
         Ok(StreamingIngestChannel::from_response(
             self,
