@@ -119,22 +119,13 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             scoped_token: None,
         };
         if jwt_token.is_empty() {
-            client
-                .get_control_plane_token(&config)
-                .await
-                .expect("Failed to generate control plane token");
+            client.get_control_plane_token(&config).await?;
         } else {
             client.jwt_token = jwt_token;
             client.auth_token_type = String::from("KEYPAIR_JWT");
         }
-        client
-            .discover_ingest_host()
-            .await
-            .expect("Failed to discover ingest host");
-        client
-            .get_scoped_token()
-            .await
-            .expect("Failed to get scoped token");
+        client.discover_ingest_host().await?;
+        client.get_scoped_token().await?;
         Ok(client)
     }
 
