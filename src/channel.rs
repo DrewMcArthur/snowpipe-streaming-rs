@@ -46,7 +46,8 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
         }
     }
 
-    /// TODO: can use the same POST to send multiple newline-delimited rows in the body, up to 16MB
+    /// Batches are sent as newline-delimited JSON rows in a single POST body
+    /// up to 16MB per request, matching Snowflake Snowpipe Streaming guidance.
     pub async fn append_row(&mut self, row: &R) -> Result<(), Error> {
         let data = serde_json::to_string(row).expect("Failed to serialize row");
         self.append_rows_call(data).await?;

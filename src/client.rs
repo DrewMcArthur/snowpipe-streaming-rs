@@ -130,9 +130,15 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         } else {
             format!("https://{}", config.url)
         };
+        // Validate control host is a proper URL before performing any network calls
+        let _ = reqwest::Url::parse(&control_host).map_err(|e| {
+            Error::Config(format!(
+                "Invalid control host URL '{}': {}",
+                control_host, e
+            ))
+        })?;
         let jwt_token = config.jwt_token.clone();
         let account = config.account.clone();
-        // TODO: validate control host is a valid URL
         let mut client = StreamingIngestClient {
             _marker: PhantomData,
             db_name: db_name.to_string(),
