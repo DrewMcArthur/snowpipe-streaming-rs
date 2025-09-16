@@ -7,7 +7,7 @@ use std::sync::Once;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use snowpipe_streaming::{ConfigLocation, StreamingIngestClient};
+use snowpipe_streaming::{Config, StreamingIngestClient};
 
 #[derive(Serialize, Clone)]
 struct RowType {
@@ -52,7 +52,7 @@ async fn discovery_and_token_flow() {
         "db",
         "schema",
         "pipe",
-        ConfigLocation::File(cfg_path.to_string_lossy().to_string()),
+        Config::from_file(&cfg_path).expect("cfg file"),
     )
     .await
     .expect("client new failed");
@@ -115,7 +115,7 @@ async fn oauth2_token_flow_generates_control_token() {
             "db",
             "schema",
             "pipe",
-            ConfigLocation::File(cfg_path.to_string_lossy().to_string()),
+            Config::from_file(&cfg_path).expect("cfg file"),
         )
         .await
         .expect("client new failed");
@@ -187,7 +187,7 @@ async fn oauth2_with_encrypted_pem_and_passphrase() {
             "db",
             "schema",
             "pipe",
-            ConfigLocation::File(cfg_path.to_string_lossy().to_string()),
+            Config::from_file(&cfg_path).expect("cfg file"),
         )
         .await
         .expect("client new failed");
@@ -270,7 +270,7 @@ async fn open_append_status_close_flow() {
         "db",
         "schema",
         "pipe",
-        ConfigLocation::File(cfg_path.to_string_lossy().to_string()),
+        Config::from_file(&cfg_path).expect("cfg file"),
     )
     .await
     .expect("client new failed");
@@ -376,7 +376,7 @@ async fn batched_append_rows_triggers_multiple_posts() {
         "db",
         "schema",
         "pipe",
-        ConfigLocation::File(cfg_path.to_string_lossy().to_string()),
+        Config::from_file(&cfg_path).expect("cfg file"),
     )
     .await
     .expect("client new failed");
@@ -462,7 +462,7 @@ async fn append_rows_error_is_mapped() {
         "db",
         "schema",
         "pipe",
-        ConfigLocation::File(cfg_path.to_string_lossy().to_string()),
+        Config::from_file(&cfg_path).expect("cfg file"),
     )
     .await
     .expect("client new failed");
@@ -524,7 +524,7 @@ async fn data_too_large_is_returned() {
         "db",
         "schema",
         "pipe",
-        ConfigLocation::File(cfg_path.to_string_lossy().to_string()),
+        Config::from_file(&cfg_path).expect("cfg file"),
     )
     .await
     .expect("client new failed");
@@ -622,7 +622,7 @@ async fn chunk_size_guard_two_large_rows_yield_two_posts() {
         "db",
         "schema",
         "pipe",
-        ConfigLocation::File(cfg_path.to_string_lossy().to_string()),
+        Config::from_file(&cfg_path).expect("cfg file"),
     )
     .await
     .expect("client new failed");

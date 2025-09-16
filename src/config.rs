@@ -1,17 +1,8 @@
-//! read configuration from a file
-
-use aws_config::BehaviorVersion;
+//! Configuration for the client
 
 use crate::errors::Error;
 
-pub enum ConfigLocation {
-    File(String),
-    Env,
-    Secret,
-}
-
-#[derive(serde::Deserialize)]
-#[allow(dead_code)]
+#[derive(serde::Deserialize, Clone)]
 pub struct Config {
     pub user: String,
     pub account: String,
@@ -24,16 +15,39 @@ pub struct Config {
     pub jwt_exp_secs: Option<u64>,
 }
 
-pub(crate) async fn read_config(loc: ConfigLocation) -> Result<Config, Error> {
-    let config = match loc {
-        ConfigLocation::File(path) => {
-            let contents = std::fs::read_to_string(path)?;
-            serde_json::from_str(&contents)?
+impl Config {
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_values(
+        user: impl Into<String>,
+        account: impl Into<String>,
+        url: impl Into<String>,
+        jwt_token: Option<String>,
+        private_key: Option<String>,
+        private_key_path: Option<String>,
+        private_key_passphrase: Option<String>,
+        jwt_exp_secs: Option<u64>,
+    ) -> Self {
+        Self {
+            user: user.into(),
+            account: account.into(),
+            url: url.into(),
+            jwt_token: jwt_token.unwrap_or_default(),
+            private_key,
+            private_key_path,
+            private_key_passphrase,
+            jwt_exp_secs,
         }
-        ConfigLocation::Env => read_config_from_env()?,
-        ConfigLocation::Secret => read_config_from_secret().await?,
-    };
-    Ok(config)
+    }
+
+    pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self, Error> {
+        let contents = std::fs::read_to_string(path).map_err(Error::Io)?;
+        let cfg = serde_json::from_str(&contents).map_err(Error::Json)?;
+        Ok(cfg)
+    }
+
+    pub fn from_env() -> Result<Self, Error> {
+        read_config_from_env()
+    }
 }
 
 fn read_config_from_env() -> Result<Config, Error> {
@@ -50,32 +64,11 @@ fn read_config_from_env() -> Result<Config, Error> {
         jwt_exp_secs: std::env::var("SNOWFLAKE_JWT_EXP_SECS")
             .ok()
             .and_then(|s| s.parse::<u64>().ok()),
-        jwt_token: std::env::var("SNOWFLAKE_JWT_TOKEN")
-            .map_err(|_| Error::Config("Missing SNOWFLAKE_JWT_TOKEN env var".to_string()))?,
+        jwt_token: std::env::var("SNOWFLAKE_JWT_TOKEN").unwrap_or_default(),
     })
 }
 
-async fn read_config_from_secret() -> Result<Config, Error> {
-    let secret_arn = std::env::var("SNOWFLAKE_CONFIG_SECRET_ARN")
-        .map_err(|_| Error::Config("Missing PROFILE_CONFIG_SECRET_ARN env var".to_string()))?;
-    let client = aws_sdk_secretsmanager::Client::new(
-        &aws_config::load_defaults(BehaviorVersion::latest()).await,
-    );
-    let resp = client
-        .get_secret_value()
-        .secret_id(secret_arn)
-        .send()
-        .await
-        .map_err(|e| Error::Config(format!("Failed to get secret: {}", e)))?;
-    let secret = match resp.secret_string() {
-        Some(s) => Ok(s),
-        None => Err(Error::Config(
-            "Failed to get secret string, returned None".to_string(),
-        )),
-    }?;
-    let config: Config = serde_json::from_str(secret)?;
-    Ok(config)
-}
+// AWS secret loading removed; prefer loading in app code and deserializing into Config.
 
 #[cfg(test)]
 mod tests {
