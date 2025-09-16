@@ -3,7 +3,8 @@ use serde::Serialize;
 use tracing::{error, info, warn};
 
 use crate::{
-    types::{AppendRowsResponse, ChannelStatus, OpenChannelResponse}, Error, StreamingIngestClient
+    Error, StreamingIngestClient,
+    types::{AppendRowsResponse, ChannelStatus, OpenChannelResponse},
 };
 
 const MAX_REQUEST_SIZE: usize = 16 * 1024 * 1024; // 16MB
@@ -29,10 +30,12 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             .clone()
             .unwrap_or("0".to_string())
             .parse()
-            .unwrap_or_else(|_| panic!(
-                "Failed to parse last_committed_offset_token from response: {:?}",
-                resp.channel_status.last_committed_offset_token
-            ));
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Failed to parse last_committed_offset_token from response: {:?}",
+                    resp.channel_status.last_committed_offset_token
+                )
+            });
         StreamingIngestChannel {
             _marker: std::marker::PhantomData,
             client: client.clone(),
@@ -77,13 +80,18 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
 
     async fn append_rows_call(&mut self, data: String) -> Result<(), Error> {
         if data.len() > MAX_REQUEST_SIZE {
-            error!("Data size {} exceeds maximum request size {}", data.len(), MAX_REQUEST_SIZE);
+            error!(
+                "Data size {} exceeds maximum request size {}",
+                data.len(),
+                MAX_REQUEST_SIZE
+            );
             return Err(Error::DataTooLarge(data.len(), MAX_REQUEST_SIZE));
         }
 
         info!(
             "append rows: channel='{}' bytes={}",
-            self.channel_name, data.len()
+            self.channel_name,
+            data.len()
         );
         let offset = self.last_pushed_offset_token + 1;
         let ingest = self
@@ -159,10 +167,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
         };
         let url = format!(
             "{}/v2/streaming/databases/{}/schemas/{}/pipes/{}:bulk-channel-status",
-            base,
-            self.client.db_name,
-            self.client.schema_name,
-            self.client.pipe_name,
+            base, self.client.db_name, self.client.schema_name, self.client.pipe_name,
         );
 
         let resp = client
@@ -196,7 +201,10 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
 
         match status {
             Some(Ok(status)) => {
-                info!("channel status: committed={:?}", status.last_committed_offset_token);
+                info!(
+                    "channel status: committed={:?}",
+                    status.last_committed_offset_token
+                );
                 self.last_committed_offset_token = status.last_committed_offset_token .clone()
             .unwrap_or("0".to_string())
             .parse()
@@ -218,10 +226,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             .await
     }
 
-    pub async fn close_with_timeout(
-        &mut self,
-        timeout: std::time::Duration,
-    ) -> Result<(), Error> {
+    pub async fn close_with_timeout(&mut self, timeout: std::time::Duration) -> Result<(), Error> {
         let start = tokio::time::Instant::now();
         let mut last_warn_minute = 0u64;
         while self.last_committed_offset_token < self.last_pushed_offset_token {
@@ -236,13 +241,19 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
                 last_warn_minute = elapsed_mins;
                 warn!(
                     "Channel '{}' close is still waiting after {} minute(s); committed={} pushed={}",
-                    self.channel_name, elapsed_mins, self.last_committed_offset_token, self.last_pushed_offset_token
+                    self.channel_name,
+                    elapsed_mins,
+                    self.last_committed_offset_token,
+                    self.last_pushed_offset_token
                 );
             }
             if elapsed >= timeout {
                 error!(
                     "Channel '{}' close timed out after {:?}; committed={} pushed={}",
-                    self.channel_name, timeout, self.last_committed_offset_token, self.last_pushed_offset_token
+                    self.channel_name,
+                    timeout,
+                    self.last_committed_offset_token,
+                    self.last_pushed_offset_token
                 );
                 return Err(Error::Timeout(timeout));
             }

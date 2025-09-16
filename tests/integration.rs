@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use jiff::Zoned;
 use serde::Serialize;
+use std::sync::Once;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
-use std::sync::Once;
 
 use snowpipe_streaming::{ConfigLocation, StreamingIngestClient};
 
@@ -102,7 +102,10 @@ async fn oauth2_token_flow_generates_control_token() {
         "jwt_exp_secs": 60
     });
     let mut cfg_path = PathBuf::from("target");
-    cfg_path.push(format!("test-config-oauth2-{}.json", server.address().port()));
+    cfg_path.push(format!(
+        "test-config-oauth2-{}.json",
+        server.address().port()
+    ));
     fs::create_dir_all("target").ok();
     fs::write(&cfg_path, serde_json::to_string(&cfg).unwrap()).unwrap();
 
@@ -141,27 +144,35 @@ async fn open_append_status_close_flow() {
     // Ingest-plane endpoints (same base as discovery for tests)
     let open_resp = include_str!("fixtures/open_channel_response.json");
     Mock::given(method("PUT"))
-        .and(path("/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch"))
+        .and(path(
+            "/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(open_resp))
         .mount(&server)
         .await;
 
     let append_resp = include_str!("fixtures/append_rows_response.json");
     Mock::given(method("POST"))
-        .and(path("/v2/streaming/data/databases/db/schemas/schema/pipes/pipe/channels/ch/rows"))
+        .and(path(
+            "/v2/streaming/data/databases/db/schemas/schema/pipes/pipe/channels/ch/rows",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(append_resp))
         .mount(&server)
         .await;
 
     let status_resp = include_str!("fixtures/channel_status_response.json");
     Mock::given(method("POST"))
-        .and(path("/v2/streaming/databases/db/schemas/schema/pipes/pipe:bulk-channel-status"))
+        .and(path(
+            "/v2/streaming/databases/db/schemas/schema/pipes/pipe:bulk-channel-status",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(status_resp))
         .mount(&server)
         .await;
 
     Mock::given(method("DELETE"))
-        .and(path("/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch"))
+        .and(path(
+            "/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch",
+        ))
         .respond_with(ResponseTemplate::new(200))
         .mount(&server)
         .await;
@@ -194,14 +205,13 @@ async fn open_append_status_close_flow() {
         .await
         .expect("open channel failed (expected to fail before URL fix)");
 
-    ch
-        .append_row(&RowType {
-            id: 1,
-            data: "x".to_string(),
-            dt: Zoned::now(),
-        })
-        .await
-        .expect("append row failed (expected to fail before URL fix)");
+    ch.append_row(&RowType {
+        id: 1,
+        data: "x".to_string(),
+        dt: Zoned::now(),
+    })
+    .await
+    .expect("append row failed (expected to fail before URL fix)");
 
     // Ensure close succeeds
     ch.close()
@@ -229,7 +239,9 @@ async fn batched_append_rows_triggers_multiple_posts() {
     // Open channel
     let open_resp = include_str!("fixtures/open_channel_response.json");
     Mock::given(method("PUT"))
-        .and(path("/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch"))
+        .and(path(
+            "/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(open_resp))
         .mount(&server)
         .await;
@@ -254,14 +266,19 @@ async fn batched_append_rows_triggers_multiple_posts() {
             "last_committed_offset_token": "100000",
             "created_on_ms": 0
         }}}
-    ).to_string();
+    )
+    .to_string();
     Mock::given(method("POST"))
-        .and(path("/v2/streaming/databases/db/schemas/schema/pipes/pipe:bulk-channel-status"))
+        .and(path(
+            "/v2/streaming/databases/db/schemas/schema/pipes/pipe:bulk-channel-status",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(status_resp_high))
         .mount(&server)
         .await;
     Mock::given(method("DELETE"))
-        .and(path("/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch"))
+        .and(path(
+            "/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch",
+        ))
         .respond_with(ResponseTemplate::new(200))
         .mount(&server)
         .await;
@@ -293,8 +310,15 @@ async fn batched_append_rows_triggers_multiple_posts() {
     // Create rows large enough that multiple rows combined exceed threshold, forcing multiple requests
     // Use many small rows to ensure chunking splits into multiple bodies
     // Create rows ~600KB each to force small chunk sizes
-    let row = RowType { id: 0, data: "x".repeat(600_000), dt: Zoned::now() };
-    let mut iter = (0..50u64).map(|i| RowType { id: i, ..row.clone() });
+    let row = RowType {
+        id: 0,
+        data: "x".repeat(600_000),
+        dt: Zoned::now(),
+    };
+    let mut iter = (0..50u64).map(|i| RowType {
+        id: i,
+        ..row.clone()
+    });
     let _ = ch.append_rows(&mut iter).await.expect("append_rows");
 
     // Now close should complete because status returns large committed token
@@ -306,7 +330,11 @@ async fn batched_append_rows_triggers_multiple_posts() {
         .iter()
         .filter(|r| r.url.path() == rows_path && format!("{:?}", r.method) == "POST")
         .count();
-    assert!(rows_posts >= 2, "expected >=2 rows posts, got {}", rows_posts);
+    assert!(
+        rows_posts >= 2,
+        "expected >=2 rows posts, got {}",
+        rows_posts
+    );
 }
 
 #[tokio::test]
@@ -327,7 +355,9 @@ async fn append_rows_error_is_mapped() {
     // Open
     let open_resp = include_str!("fixtures/open_channel_response.json");
     Mock::given(method("PUT"))
-        .and(path("/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch"))
+        .and(path(
+            "/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(open_resp))
         .mount(&server)
         .await;
@@ -363,7 +393,11 @@ async fn append_rows_error_is_mapped() {
     let mut ch = client.open_channel("ch").await.expect("open channel");
 
     let err = ch
-        .append_row(&RowType { id: 1, data: "x".into(), dt: Zoned::now() })
+        .append_row(&RowType {
+            id: 1,
+            data: "x".into(),
+            dt: Zoned::now(),
+        })
         .await
         .expect_err("expected error");
     match err {
@@ -390,7 +424,9 @@ async fn data_too_large_is_returned() {
     // Open
     let open_resp = include_str!("fixtures/open_channel_response.json");
     Mock::given(method("PUT"))
-        .and(path("/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch"))
+        .and(path(
+            "/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(open_resp))
         .mount(&server)
         .await;
@@ -419,7 +455,11 @@ async fn data_too_large_is_returned() {
     let mut ch = client.open_channel("ch").await.expect("open channel");
 
     // Create an oversized row that exceeds MAX_REQUEST_SIZE after serialization
-    let big = RowType { id: 1, data: "a".repeat(16 * 1024 * 1024), dt: Zoned::now() };
+    let big = RowType {
+        id: 1,
+        data: "a".repeat(16 * 1024 * 1024),
+        dt: Zoned::now(),
+    };
     let err = ch.append_row(&big).await.expect_err("expected error");
     match err {
         snowpipe_streaming::Error::DataTooLarge(actual, max) => {
@@ -447,7 +487,9 @@ async fn chunk_size_guard_two_large_rows_yield_two_posts() {
     // Open
     let open_resp = include_str!("fixtures/open_channel_response.json");
     Mock::given(method("PUT"))
-        .and(path("/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch"))
+        .and(path(
+            "/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(open_resp))
         .mount(&server)
         .await;
@@ -470,14 +512,19 @@ async fn chunk_size_guard_two_large_rows_yield_two_posts() {
             "last_committed_offset_token": "100000",
             "created_on_ms": 0
         }}}
-    ).to_string();
+    )
+    .to_string();
     Mock::given(method("POST"))
-        .and(path("/v2/streaming/databases/db/schemas/schema/pipes/pipe:bulk-channel-status"))
+        .and(path(
+            "/v2/streaming/databases/db/schemas/schema/pipes/pipe:bulk-channel-status",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(status_resp_high))
         .mount(&server)
         .await;
     Mock::given(method("DELETE"))
-        .and(path("/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch"))
+        .and(path(
+            "/v2/streaming/databases/db/schemas/schema/pipes/pipe/channels/ch",
+        ))
         .respond_with(ResponseTemplate::new(200))
         .mount(&server)
         .await;
@@ -506,8 +553,19 @@ async fn chunk_size_guard_two_large_rows_yield_two_posts() {
     let mut ch = client.open_channel("ch").await.expect("open channel");
 
     // Two very large rows (~9MB) → chunk size clamps to 1 → exactly 2 posts
-    let big = RowType { id: 0, data: "x".repeat(9_000_000), dt: Zoned::now() };
-    let mut iter = vec![RowType { id: 1, ..big.clone() }, RowType { id: 2, ..big }].into_iter();
+    let big = RowType {
+        id: 0,
+        data: "x".repeat(9_000_000),
+        dt: Zoned::now(),
+    };
+    let mut iter = vec![
+        RowType {
+            id: 1,
+            ..big.clone()
+        },
+        RowType { id: 2, ..big },
+    ]
+    .into_iter();
     let _ = ch.append_rows(&mut iter).await.expect("append_rows");
     ch.close().await.expect("close");
 
@@ -516,13 +574,15 @@ async fn chunk_size_guard_two_large_rows_yield_two_posts() {
         .iter()
         .filter(|r| r.url.path() == rows_path && format!("{:?}", r.method) == "POST")
         .count();
-    assert_eq!(rows_posts, 2, "expected exactly 2 rows posts, got {}", rows_posts);
+    assert_eq!(
+        rows_posts, 2,
+        "expected exactly 2 rows posts, got {}",
+        rows_posts
+    );
 }
 static INIT: Once = Once::new();
 fn init_logging() {
     INIT.call_once(|| {
-        let _ = tracing_subscriber::fmt()
-            .with_test_writer()
-            .try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
     });
 }

@@ -47,7 +47,9 @@ fn read_config_from_env() -> Result<Config, Error> {
         private_key: std::env::var("SNOWFLAKE_PRIVATE_KEY").ok(),
         private_key_path: std::env::var("SNOWFLAKE_PRIVATE_KEY_PATH").ok(),
         private_key_passphrase: std::env::var("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE").ok(),
-        jwt_exp_secs: std::env::var("SNOWFLAKE_JWT_EXP_SECS").ok().and_then(|s| s.parse::<u64>().ok()),
+        jwt_exp_secs: std::env::var("SNOWFLAKE_JWT_EXP_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok()),
         jwt_token: std::env::var("SNOWFLAKE_JWT_TOKEN")
             .map_err(|_| Error::Config("Missing SNOWFLAKE_JWT_TOKEN env var".to_string()))?,
     })

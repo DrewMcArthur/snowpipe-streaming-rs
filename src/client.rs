@@ -31,7 +31,14 @@ fn generate_assertion(url: &str, cfg: &crate::config::Config) -> Result<String, 
         exp: usize,
         jti: String,
     }
-    let claims = Claims { iss, sub, aud, iat, exp, jti };
+    let claims = Claims {
+        iss,
+        sub,
+        aud,
+        iat,
+        exp,
+        jti,
+    };
 
     let pem_bytes = if let Some(ref key) = cfg.private_key {
         key.as_bytes().to_vec()
@@ -44,7 +51,9 @@ fn generate_assertion(url: &str, cfg: &crate::config::Config) -> Result<String, 
         ));
     };
     if cfg.private_key_passphrase.is_some() {
-        return Err(Error::Key("Encrypted private keys not yet supported".into()));
+        return Err(Error::Key(
+            "Encrypted private keys not yet supported".into(),
+        ));
     }
     let enc_key = jsonwebtoken::EncodingKey::from_rsa_pem(&pem_bytes)
         .map_err(|e| Error::Key(format!("Invalid RSA private key: {e}")))?;
@@ -159,9 +168,16 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             .error_for_status()?;
         #[derive(serde::Deserialize)]
         #[allow(dead_code)]
-        struct TokenResp { access_token: String, token_type: Option<String>, expires_in: Option<i64> }
+        struct TokenResp {
+            access_token: String,
+            token_type: Option<String>,
+            expires_in: Option<i64>,
+        }
         let tr: TokenResp = resp.json().await?;
-        info!("control-plane token acquired (len={})", tr.access_token.len());
+        info!(
+            "control-plane token acquired (len={})",
+            tr.access_token.len()
+        );
         self.jwt_token = tr.access_token;
         self.auth_token_type = String::from("OAUTH");
         Ok(())
@@ -191,7 +207,10 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             self.ingest_host = Some(body);
             Ok(())
         } else {
-            error!("discover ingest host failed: status={} body='{}'", status, body);
+            error!(
+                "discover ingest host failed: status={} body='{}'",
+                status, body
+            );
             Err(Error::IngestHostDiscovery(status, body))
         }
     }
