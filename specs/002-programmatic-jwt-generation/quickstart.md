@@ -7,7 +7,6 @@ Config
   "account": "<SF_ACCOUNT>",
   "url": "https://<account-host>",
   "private_key_path": "/path/to/private_key.pem",
-  "jwt_exp_secs": 60
 }
 ```
 

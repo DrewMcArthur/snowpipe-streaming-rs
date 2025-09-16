@@ -31,10 +31,10 @@
       - Stub `POST /oauth2/token` → JSON `{access_token, token_type, expires_in}`
       - Config: no `jwt_token`; provide `private_key` (PEM string)
       - Assert client initializes (discovers host, obtains scoped token) using generated control-plane token
-- [ ] T005 [P] Unit: key parsing + client assertion claims in `tests/unit/jwt.rs`
+- [x] T005 [P] Unit: key parsing + client assertion claims in `tests/unit/jwt.rs`
       - Load test PEM; generate client assertion; decode (without verify) and assert header `alg=RS256`, `aud` matches `/oauth2/token`, `exp > iat`
-- [ ] T006 [P] Unit: config reading of new fields in `src/config.rs` (env + file)
-- [ ] T007 [P] Integration: failure cases in `tests/integration.rs`
+- [x] T006 [P] Unit: config reading of new fields in `src/config.rs` (env + file)
+- [x] T007 [P] Integration: failure cases in `tests/integration.rs`
       - Missing key → actionable error
       - `/oauth2/token` returns 400 → `Error::Http`
 

@@ -21,7 +21,7 @@ fn generate_assertion(url: &str, cfg: &crate::config::Config) -> Result<String, 
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| Error::Config(format!("Time error: {e}")))?
         .as_secs() as usize;
-    let exp_secs = cfg.jwt_exp_secs.unwrap_or(60) as usize;
+    let exp_secs = cfg.jwt_exp_secs.unwrap_or(3600) as usize;
     let exp = iat + exp_secs;
     let jti = uuid::Uuid::new_v4().to_string();
 
@@ -151,22 +151,13 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             scoped_token: None,
         };
         if jwt_token.is_empty() {
-            client
-                .get_control_plane_token(&config)
-                .await
-                .expect("Failed to generate control plane token");
+            client.get_control_plane_token(&config).await?;
         } else {
             client.jwt_token = jwt_token;
             client.auth_token_type = String::from("KEYPAIR_JWT");
         }
-        client
-            .discover_ingest_host()
-            .await
-            .expect("Failed to discover ingest host");
-        client
-            .get_scoped_token()
-            .await
-            .expect("Failed to get scoped token");
+        client.discover_ingest_host().await?;
+        client.get_scoped_token().await?;
         Ok(client)
     }
 
