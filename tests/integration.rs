@@ -376,7 +376,7 @@ async fn batched_append_rows_triggers_multiple_posts() {
         "db",
         "schema",
         "pipe",
-            Config::from_file(&cfg_path).expect("cfg file"),
+        Config::from_file(&cfg_path).expect("cfg file"),
     )
     .await
     .expect("client new failed");
@@ -462,7 +462,7 @@ async fn append_rows_error_is_mapped() {
         "db",
         "schema",
         "pipe",
-            Config::from_file(&cfg_path).expect("cfg file"),
+        Config::from_file(&cfg_path).expect("cfg file"),
     )
     .await
     .expect("client new failed");

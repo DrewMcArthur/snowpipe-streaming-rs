@@ -32,7 +32,16 @@ mod tests {
             "my_db",
             "my_schema",
             "my_pipe",
-            Config::from_values("user","acct","https://example",Some("jwt".into()),None,None,None,Some(60)),
+            Config::from_values(
+                "user",
+                "acct",
+                "https://example",
+                Some("jwt".into()),
+                None,
+                None,
+                None,
+                Some(60),
+            ),
         )
         .await
         .expect("Failed to create client");
