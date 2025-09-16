@@ -210,7 +210,7 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
     async fn discover_ingest_host(&mut self) -> Result<(), Error> {
         let control_host = self.control_host.as_str();
         let url = format!("{control_host}/v2/streaming/hostname");
-        // TODO: pick up from where left off, read JWT from snowsql and private key
+        // Control-plane discovery per REST guide:
         // https://github.com/sfc-gh-chathomas/snowpipe-streaming-examples/tree/main/REST#step-1-discover-ingest-host
         let client = Client::new();
         let resp = client
@@ -315,28 +315,5 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
     pub fn close(&self) {}
 }
 
-// async fn fetch_jwt(account: &str, username: &str, private_key_path: &str) -> Result<String, Error> {
-//     unimplemented!("This doesn't work due to snowsql's stdout handling");
-// let mut child  = Command::new("snowsql")
-//     .args(&[
-//         "-a",
-//         account,
-//         "-u",
-//         username,
-//         "--private-key-path",
-//         private_key_path,
-//         "--generate-jwt",
-//     ])
-//     .stdin(Stdio::piped()).spawn()?;
-
-// if let Some(_) = child.stdin.take() { }
-
-// let output = child.wait_with_output()?;
-
-// if !output.status.success() {
-//     return Err(Error::from(output));
-// }
-
-// let jwt_token = String::from_utf8_lossy(&output.stdout).trim().to_string();
-// Ok(jwt_token)
-// }
+// Legacy snowsql-based JWT generation was explored but not used; programmatic
+// OAuth2 control-plane token acquisition is implemented instead.
