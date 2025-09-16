@@ -25,7 +25,7 @@
  ```
  
  ## Summary
- Add comprehensive unit and integration tests for the existing Rust library to prevent regressions. Integration tests will run against a local mocked HTTP server that emulates Snowflake Streaming Ingest endpoints used by the client/channel, enabling deterministic, credential‑free CI runs.
+ Add comprehensive unit and integration tests for the existing Rust library to prevent regressions. Integration tests will run against a local mocked HTTP server that emulates Snowpipe Streaming Ingest endpoints used by the client/channel, enabling deterministic, credential‑free CI runs.
  
  ## Technical Context
  **Language/Version**: Rust (edition 2024)
