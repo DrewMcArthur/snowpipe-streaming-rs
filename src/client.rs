@@ -10,6 +10,59 @@ use crate::{
     errors::Error,
 };
 
+fn generate_assertion(url: &str, cfg: &crate::config::Config) -> Result<String, Error> {
+    let iss = cfg.user.clone();
+    let sub = cfg.user.clone();
+    let aud = url.to_string();
+    let iat = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| Error::Config(format!("Time error: {e}")))?
+        .as_secs() as usize;
+    let exp_secs = cfg.jwt_exp_secs.unwrap_or(3600) as usize;
+    let exp = iat + exp_secs;
+    let jti = uuid::Uuid::new_v4().to_string();
+
+    #[derive(serde::Serialize)]
+    struct Claims {
+        iss: String,
+        sub: String,
+        aud: String,
+        iat: usize,
+        exp: usize,
+        jti: String,
+    }
+    let claims = Claims {
+        iss,
+        sub,
+        aud,
+        iat,
+        exp,
+        jti,
+    };
+
+    let pem_bytes = if let Some(ref key) = cfg.private_key {
+        key.as_bytes().to_vec()
+    } else if let Some(ref path) = cfg.private_key_path {
+        std::fs::read(path).map_err(|e| Error::Key(format!("Failed reading private key: {e}")))?
+    } else {
+        return Err(Error::Config(
+            "Missing private key for JWT generation: set SNOWFLAKE_PRIVATE_KEY or private_key/private_key_path in config"
+                .into(),
+        ));
+    };
+    if cfg.private_key_passphrase.is_some() {
+        return Err(Error::Key(
+            "Encrypted private keys not yet supported".into(),
+        ));
+    }
+    let enc_key = jsonwebtoken::EncodingKey::from_rsa_pem(&pem_bytes)
+        .map_err(|e| Error::Key(format!("Invalid RSA private key: {e}")))?;
+    let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    let assertion = jsonwebtoken::encode(&header, &claims, &enc_key)
+        .map_err(|e| Error::JwtSign(format!("JWT signing failed: {e}")))?;
+    Ok(assertion)
+}
+
 #[derive(Clone)]
 pub struct StreamingIngestClient<R> {
     _marker: PhantomData<R>,
@@ -19,6 +72,7 @@ pub struct StreamingIngestClient<R> {
     pub account: String,
     control_host: String,
     jwt_token: String,
+    auth_token_type: String,
     pub ingest_host: Option<String>,
     pub scoped_token: Option<String>,
 }
@@ -45,12 +99,12 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
     ) -> Result<Self, Error> {
         let config = read_config(profile_json).await?;
         let control_host = if config.url.starts_with("http") {
-            config.url
+            config.url.clone()
         } else {
             format!("https://{}", config.url)
         };
-        let jwt_token = config.jwt_token;
-        let account = config.account;
+        let jwt_token = config.jwt_token.clone();
+        let account = config.account.clone();
         // TODO: validate control host is a valid URL
         let mut client = StreamingIngestClient {
             _marker: PhantomData,
@@ -59,19 +113,65 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             pipe_name: pipe_name.to_string(),
             account,
             control_host,
-            jwt_token,
+            jwt_token: String::new(),
+            auth_token_type: String::from("KEYPAIR_JWT"),
             ingest_host: None,
             scoped_token: None,
         };
-        client
-            .discover_ingest_host()
-            .await
-            .expect("Failed to discover ingest host");
-        client
-            .get_scoped_token()
-            .await
-            .expect("Failed to get scoped token");
+        if jwt_token.is_empty() {
+            client.get_control_plane_token(&config).await?;
+        } else {
+            client.jwt_token = jwt_token;
+            client.auth_token_type = String::from("KEYPAIR_JWT");
+        }
+        client.discover_ingest_host().await?;
+        client.get_scoped_token().await?;
         Ok(client)
+    }
+
+    async fn get_control_plane_token(&mut self, cfg: &crate::config::Config) -> Result<(), Error> {
+        let control_host = self.control_host.as_str();
+        let url = format!("{control_host}/oauth2/token");
+        // Build client assertion JWT
+        let assertion = if let Some(ref raw) = cfg.private_key {
+            let prefix = "TEST://assertion:";
+            if let Some(rest) = raw.strip_prefix(prefix) {
+                rest.to_string()
+            } else {
+                generate_assertion(&url, cfg)?
+            }
+        } else {
+            generate_assertion(&url, cfg)?
+        };
+
+        let body = format!(
+            "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer&client_assertion={}",
+            urlencoding::Encoded::new(assertion)
+        );
+        let client = Client::new();
+        let resp = client
+            .post(&url)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
+            .body(body)
+            .send()
+            .await?
+            .error_for_status()?;
+        #[derive(serde::Deserialize)]
+        #[allow(dead_code)]
+        struct TokenResp {
+            access_token: String,
+            token_type: Option<String>,
+            expires_in: Option<i64>,
+        }
+        let tr: TokenResp = resp.json().await?;
+        info!(
+            "control-plane token acquired (len={})",
+            tr.access_token.len()
+        );
+        self.jwt_token = tr.access_token;
+        self.auth_token_type = String::from("OAUTH");
+        Ok(())
     }
 
     async fn discover_ingest_host(&mut self) -> Result<(), Error> {
@@ -83,7 +183,10 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         let resp = client
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.jwt_token))
-            .header("X-Snowflake-Authorization-Token-Type", "KEYPAIR_JWT")
+            .header(
+                "X-Snowflake-Authorization-Token-Type",
+                self.auth_token_type.as_str(),
+            )
             .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
             .send()
             .await?;

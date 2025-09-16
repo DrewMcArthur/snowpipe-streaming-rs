@@ -16,9 +16,12 @@ pub struct Config {
     pub user: String,
     pub account: String,
     pub url: String,
+    #[serde(default)]
     pub jwt_token: String,
     pub private_key: Option<String>,
     pub private_key_path: Option<String>,
+    pub private_key_passphrase: Option<String>,
+    pub jwt_exp_secs: Option<u64>,
 }
 
 pub(crate) async fn read_config(loc: ConfigLocation) -> Result<Config, Error> {
@@ -41,8 +44,12 @@ fn read_config_from_env() -> Result<Config, Error> {
             .map_err(|_| Error::Config("Missing SNOWFLAKE_ACCOUNT env var".to_string()))?,
         url: std::env::var("SNOWFLAKE_URL")
             .map_err(|_| Error::Config("Missing SNOWFLAKE_URL env var".to_string()))?,
-        private_key: None,
-        private_key_path: None,
+        private_key: std::env::var("SNOWFLAKE_PRIVATE_KEY").ok(),
+        private_key_path: std::env::var("SNOWFLAKE_PRIVATE_KEY_PATH").ok(),
+        private_key_passphrase: std::env::var("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE").ok(),
+        jwt_exp_secs: std::env::var("SNOWFLAKE_JWT_EXP_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok()),
         jwt_token: std::env::var("SNOWFLAKE_JWT_TOKEN")
             .map_err(|_| Error::Config("Missing SNOWFLAKE_JWT_TOKEN env var".to_string()))?,
     })
