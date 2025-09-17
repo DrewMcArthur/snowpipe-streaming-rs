@@ -477,7 +477,7 @@ async fn append_rows_error_is_mapped() {
         .await
         .expect_err("expected error");
     match err {
-        snowpipe_streaming::Error::Http(_) => {}
+        snowpipe_streaming::Error::Http(_, _) => {}
         other => panic!("unexpected error: {:?}", other),
     }
 }
