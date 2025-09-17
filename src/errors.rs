@@ -4,7 +4,8 @@ use reqwest::StatusCode;
 pub enum Error {
     Io(std::io::Error),
     Json(serde_json::Error),
-    Http(reqwest::Error),
+    Http(reqwest::StatusCode, String),
+    Reqwest(reqwest::Error),
     IngestHostDiscovery(StatusCode, String),
     DataTooLarge(usize, usize),
     JwtError(std::process::Output),
@@ -28,7 +29,8 @@ impl From<serde_json::Error> for Error {
 
 impl From<reqwest::Error> for Error {
     fn from(err: reqwest::Error) -> Self {
-        Error::Http(err)
+        let msg = err.to_string();
+        Error::Reqwest(err)
     }
 }
 
@@ -43,7 +45,8 @@ impl std::fmt::Display for Error {
         match self {
             Error::Io(e) => write!(f, "IO error: {}", e),
             Error::Json(e) => write!(f, "JSON error: {}", e),
-            Error::Http(e) => write!(f, "HTTP error: {}", e),
+            Error::Http(e, msg) => write!(f, "HTTP error: {} {}", e, msg),
+            Error::Reqwest(e) => write!(f, "Reqwest error: {}", e),
             Error::IngestHostDiscovery(code, body) => {
                 write!(
                     f,
@@ -72,7 +75,7 @@ impl std::error::Error for Error {
         match self {
             Error::Io(e) => Some(e),
             Error::Json(e) => Some(e),
-            Error::Http(e) => Some(e),
+            Error::Reqwest(e) => Some(e),
             _ => None,
         }
     }

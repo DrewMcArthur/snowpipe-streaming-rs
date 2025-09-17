@@ -188,8 +188,14 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
             .body(body)
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+
+        let status = resp.status();
+        if ! status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(Error::Http(status, body));
+        }
+
         #[derive(serde::Deserialize)]
         #[allow(dead_code)]
         struct TokenResp {
