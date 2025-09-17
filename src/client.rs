@@ -18,8 +18,12 @@ fn generate_assertion(audience: &str, cfg: &crate::config::Config) -> Result<Str
             return Ok(rest.to_string());
         }
     }
-    let iss = cfg.user.clone();
-    let sub = cfg.user.clone();
+    let name = match cfg.login.as_ref() {
+        Some(login) => login,
+        None => &cfg.user,
+    };
+    let iss = name.clone();
+    let sub = name.clone();
     let aud = audience.to_string();
     let iat_u = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

@@ -5,6 +5,7 @@ use crate::errors::Error;
 #[derive(serde::Deserialize, Clone)]
 pub struct Config {
     pub user: String,
+    pub login: Option<String>,
     pub account: String,
     pub url: String,
     #[serde(default)]
@@ -19,6 +20,7 @@ impl Config {
     #[allow(clippy::too_many_arguments)]
     pub fn from_values(
         user: impl Into<String>,
+        login: Option<String>,
         account: impl Into<String>,
         url: impl Into<String>,
         jwt_token: Option<String>,
@@ -29,6 +31,7 @@ impl Config {
     ) -> Self {
         Self {
             user: user.into(),
+            login: login,
             account: account.into(),
             url: url.into(),
             jwt_token: jwt_token.unwrap_or_default(),
@@ -54,6 +57,7 @@ fn read_config_from_env() -> Result<Config, Error> {
     Ok(Config {
         user: std::env::var("SNOWFLAKE_USERNAME")
             .map_err(|_| Error::Config("Missing SNOWFLAKE_USERNAME env var".to_string()))?,
+        login: std::env::var("SNOWFLAKE_LOGIN").ok(),
         account: std::env::var("SNOWFLAKE_ACCOUNT")
             .map_err(|_| Error::Config("Missing SNOWFLAKE_ACCOUNT env var".to_string()))?,
         url: std::env::var("SNOWFLAKE_URL")
