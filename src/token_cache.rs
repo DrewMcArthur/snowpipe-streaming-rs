@@ -1,4 +1,5 @@
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct TokenCache {
     pub token: String,
     pub iat: i64,

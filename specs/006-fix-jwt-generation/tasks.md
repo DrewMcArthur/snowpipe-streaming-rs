@@ -67,6 +67,11 @@
       - Revise `/Users/drewmca/Coding/snowpipe-streaming-rs/specs/004-config-arg-constructor/spec.md` to remove references to OAuth2 token issuance
 - [ ] T016 Validate quickstart and add example
       - Ensure `/Users/drewmca/Coding/snowpipe-streaming-rs/specs/006-fix-jwt-generation/quickstart.md` compiles logically with public API
+- [ ] T017 CI checks: fmt, clippy, check, tests
+      - Run `cargo fmt --all --check`
+      - Run `cargo clippy -- -D warnings`
+      - Run `cargo check`
+      - Run `cargo test --lib` locally; run full suite in CI (integration tests require port binding)
 
 ## Dependencies
 - T002–T005 before T006–T013

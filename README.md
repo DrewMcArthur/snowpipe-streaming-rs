@@ -93,8 +93,8 @@ let client = StreamingIngestClient::<YourRow>::new(
 
 Two options are supported:
 
-- Pre-supplied JWT: Provide `SNOWFLAKE_JWT_TOKEN` (or `jwt_token` in config). The client uses `KEYPAIR_JWT` for control-plane calls.
-- Programmatic OAuth2 token generation: Provide a private key (string or file path). The client generates a control-plane access token via the Snowflake `/oauth2/token` endpoint.
+- Pre-supplied JWT: Provide `SNOWFLAKE_JWT_TOKEN` (or `jwt_token` in config). The client uses the token for control-plane calls using the `Authorization: Snowflake JWT {token}` header.
+- Programmatic keypair JWT generation (recommended): Provide a private key (string or file path). The client generates the control-plane JWT locally (no `/oauth2/token` call) and uses it for control-plane calls.
 
 Config fields (JSON file or env):
 - `user` (`SNOWFLAKE_USERNAME`) – Snowflake user identifier
@@ -104,7 +104,7 @@ Config fields (JSON file or env):
 - `private_key` (`SNOWFLAKE_PRIVATE_KEY`) – Optional PEM-encoded private key string
 - `private_key_path` (`SNOWFLAKE_PRIVATE_KEY_PATH`) – Optional path to private key PEM file
 - `private_key_passphrase` (`SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`) – Passphrase for encrypted PKCS#8 private keys
-- `jwt_exp_secs` (`SNOWFLAKE_JWT_EXP_SECS`) – Optional JWT client assertion lifetime (default 60s)
+- `jwt_exp_secs` (`SNOWFLAKE_JWT_EXP_SECS`) – Optional JWT lifetime in seconds (default 3600)
 
 Example (programmatic):
 ```

@@ -7,9 +7,14 @@ use rsa::pkcs1::EncodeRsaPrivateKey;
 use serde::Serialize;
 use tracing::{error, info};
 
-use crate::{channel::StreamingIngestChannel, config::Config, errors::Error, token_cache::TokenCache};
+use crate::{
+    channel::StreamingIngestChannel, config::Config, errors::Error, token_cache::TokenCache,
+};
 
-fn generate_assertion(audience: &str, cfg: &crate::config::Config) -> Result<(String, i64, i64), Error> {
+fn generate_assertion(
+    audience: &str,
+    cfg: &crate::config::Config,
+) -> Result<(String, i64, i64), Error> {
     // Test helper: allow bypass via special prefix
     if let Some(ref raw) = cfg.private_key {
         let prefix = "TEST://assertion:";
@@ -19,7 +24,11 @@ fn generate_assertion(audience: &str, cfg: &crate::config::Config) -> Result<(St
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|e| Error::Config(format!("Time error: {e}")))?
                 .as_secs() as i64;
-            return Ok((rest.to_string(), now, now + cfg.jwt_exp_secs.unwrap_or(3600) as i64));
+            return Ok((
+                rest.to_string(),
+                now,
+                now + cfg.jwt_exp_secs.unwrap_or(3600) as i64,
+            ));
         }
     }
     let iss = cfg.user.clone();
@@ -191,8 +200,7 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
                 .map_err(|e| Error::Config(format!("Time error: {e}")))?
                 .as_secs() as i64;
             if cache.needs_refresh(now, 300) {
-                let (assertion, iat, exp) =
-                    generate_assertion(&self.control_host, &self.config)?;
+                let (assertion, iat, exp) = generate_assertion(&self.control_host, &self.config)?;
                 self.jwt_token = assertion.clone();
                 self.jwt_cache = Some(TokenCache::new(assertion, iat, exp));
             }
