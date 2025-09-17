@@ -31,7 +31,7 @@ impl Config {
     ) -> Self {
         Self {
             user: user.into(),
-            login: login,
+            login,
             account: account.into(),
             url: url.into(),
             jwt_token: jwt_token.unwrap_or_default(),
