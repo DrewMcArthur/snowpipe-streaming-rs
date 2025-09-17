@@ -34,6 +34,7 @@ mod tests {
             "my_pipe",
             Config::from_values(
                 "user",
+                Some("login".into()),
                 "acct",
                 "https://example",
                 Some("jwt".into()),
