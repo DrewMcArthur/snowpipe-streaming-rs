@@ -29,7 +29,6 @@ impl From<serde_json::Error> for Error {
 
 impl From<reqwest::Error> for Error {
     fn from(err: reqwest::Error) -> Self {
-        let msg = err.to_string();
         Error::Reqwest(err)
     }
 }
