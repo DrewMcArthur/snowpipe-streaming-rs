@@ -478,6 +478,7 @@ async fn append_rows_error_is_mapped() {
         .expect_err("expected error");
     match err {
         snowpipe_streaming::Error::Http(_, _) => {}
+        snowpipe_streaming::Error::Reqwest(e) if e.status() == Some(reqwest::StatusCode::PAYLOAD_TOO_LARGE) => {}
         other => panic!("unexpected error: {:?}", other),
     }
 }
