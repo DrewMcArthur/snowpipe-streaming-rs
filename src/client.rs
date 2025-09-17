@@ -9,16 +9,24 @@ use tracing::{error, info};
 
 use crate::{channel::StreamingIngestChannel, config::Config, errors::Error};
 
-fn generate_assertion(url: &str, cfg: &crate::config::Config) -> Result<String, Error> {
+fn generate_assertion(audience: &str, cfg: &crate::config::Config) -> Result<String, Error> {
+    // Test helper: allow bypass via special prefix
+    if let Some(ref raw) = cfg.private_key {
+        let prefix = "TEST://assertion:";
+        if let Some(rest) = raw.strip_prefix(prefix) {
+            // No iat/exp context in bypass; pick small window forcing refresh paths in tests if needed
+            return Ok(rest.to_string());
+        }
+    }
     let iss = cfg.user.clone();
     let sub = cfg.user.clone();
-    let aud = url.to_string();
-    let iat = std::time::SystemTime::now()
+    let aud = audience.to_string();
+    let iat_u = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| Error::Config(format!("Time error: {e}")))?
-        .as_secs() as usize;
-    let exp_secs = cfg.jwt_exp_secs.unwrap_or(3600) as usize;
-    let exp = iat + exp_secs;
+        .as_secs() as i64;
+    let exp_secs = cfg.jwt_exp_secs.unwrap_or(3600) as i64;
+    let exp_i = iat_u + exp_secs;
     let jti = uuid::Uuid::new_v4().to_string();
 
     #[derive(serde::Serialize)]
@@ -34,8 +42,8 @@ fn generate_assertion(url: &str, cfg: &crate::config::Config) -> Result<String, 
         iss,
         sub,
         aud,
-        iat,
-        exp,
+        iat: iat_u as usize,
+        exp: exp_i as usize,
         jti,
     };
 
@@ -152,7 +160,11 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             scoped_token: None,
         };
         if jwt_token.is_empty() {
-            client.get_control_plane_token(&config).await?;
+            // Generate a control-plane JWT locally from the provided private key
+            // Audience is the control host (no /oauth2/token endpoint exists for keypair JWT)
+            let assertion = generate_assertion(&client.control_host, &config)?;
+            client.jwt_token = assertion;
+            client.auth_token_type = String::from("KEYPAIR_JWT");
         } else {
             client.jwt_token = jwt_token;
             client.auth_token_type = String::from("KEYPAIR_JWT");
@@ -162,56 +174,7 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         Ok(client)
     }
 
-    async fn get_control_plane_token(&mut self, cfg: &crate::config::Config) -> Result<(), Error> {
-        let control_host = self.control_host.as_str();
-        let url = format!("{control_host}/oauth2/token");
-        // Build client assertion JWT
-        let assertion = if let Some(ref raw) = cfg.private_key {
-            let prefix = "TEST://assertion:";
-            if let Some(rest) = raw.strip_prefix(prefix) {
-                rest.to_string()
-            } else {
-                generate_assertion(&url, cfg)?
-            }
-        } else {
-            generate_assertion(&url, cfg)?
-        };
-
-        let body = format!(
-            "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer&client_assertion={}",
-            urlencoding::Encoded::new(assertion)
-        );
-        let client = Client::new();
-        let resp = client
-            .post(&url)
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
-            .body(body)
-            .send()
-            .await?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(Error::Http(status, body));
-        }
-
-        #[derive(serde::Deserialize)]
-        #[allow(dead_code)]
-        struct TokenResp {
-            access_token: String,
-            token_type: Option<String>,
-            expires_in: Option<i64>,
-        }
-        let tr: TokenResp = resp.json().await?;
-        info!(
-            "control-plane token acquired (len={})",
-            tr.access_token.len()
-        );
-        self.jwt_token = tr.access_token;
-        self.auth_token_type = String::from("OAUTH");
-        Ok(())
-    }
+    // Removed get_control_plane_token; JWT is generated locally during construction.
 
     async fn discover_ingest_host(&mut self) -> Result<(), Error> {
         let control_host = self.control_host.as_str();
@@ -245,7 +208,7 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         }
     }
 
-    async fn get_scoped_token(&mut self) -> Result<(), Error> {
+    pub(crate) async fn get_scoped_token(&mut self) -> Result<(), Error> {
         // remove protocol from str
         let control_host = self.control_host.as_str();
         let url = format!("{control_host}/oauth/token");

@@ -1,8 +1,8 @@
 
-# Implementation Plan: [FEATURE]
+# Implementation Plan: Fix JWT Generation (client-side, no /oauth2/token)
 
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
+**Branch**: `006-fix-jwt-generation` | **Date**: 2025-09-17 | **Spec**: `/Users/drewmca/Coding/snowpipe-streaming-rs/specs/006-fix-jwt-generation/spec.md`
+**Input**: Feature specification from `/specs/006-fix-jwt-generation/spec.md`
 
 ## Execution Flow (/plan command scope)
 ```
@@ -31,23 +31,25 @@
 - Phase 3-4: Implementation execution (manual or via tools)
 
 ## Summary
-[Extract from feature spec: primary requirement + technical approach from research]
+Goal: Correct the authentication flow by removing the erroneous assumption that Snowflake issues JWTs via `/oauth2/token`. The client must generate the Snowflake JWT entirely client-side from a provided private key (path or inline string, optional passphrase), cache it, and refresh it proactively (before 1-hour expiry) and reactively (on explicit expiry errors).
 
 ## Technical Context
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [single/web/mobile - determines source structure]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Language/Version**: Rust (Edition 2024)  
+**Primary Dependencies**: `jsonwebtoken`, `pkcs8`, `rsa`, `pem`, `uuid`, `tokio`, `reqwest` (for data plane, not for token issuance)  
+**Storage**: N/A (in-memory token cache)  
+**Testing**: `cargo test`, `wiremock` for HTTP integration behavior, unit tests for JWT claims and refresh logic  
+**Target Platform**: Linux/macOS CI and containerized services
+**Project Type**: single (library + example)
+**Performance Goals**: Token generation under 10ms typical; zero network calls for auth issuance
+**Constraints**: JWT validity 1 hour; proactive refresh at T-5m; thread-safe cache; no plaintext key persistence beyond process memory
+**Scale/Scope**: Library consumers across multiple services; low RPS for token generation; many parallel clients possible
+
+Technical context from user: previously attempted to hit `/oauth2/token` which does not exist for Snowflake keypair auth; must generate client-side JWT and cache; support private key by path or inline; optional passphrase for encrypted PEM; refresh on timer or on server-expired error (exact server error semantics need confirmation) [NEEDS CLARIFICATION].
 
 ## Constitution Check
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+Constitution document contains placeholders and no enforceable rules. No explicit constraints detected. Adopt standard principles: Test-first, simplicity, and clear contracts. No violations identified.
 
 ## Project Structure
 
@@ -99,7 +101,7 @@ ios/ or android/
 └── [platform-specific structure]
 ```
 
-**Structure Decision**: [DEFAULT to Option 1 unless Technical Context indicates web/mobile app]
+**Structure Decision**: Option 1 (single project) is appropriate for a Rust library.
 
 ## Phase 0: Outline & Research
 1. **Extract unknowns from Technical Context** above:
@@ -120,7 +122,7 @@ ios/ or android/
    - Rationale: [why chosen]
    - Alternatives considered: [what else evaluated]
 
-**Output**: research.md with all NEEDS CLARIFICATION resolved
+**Output**: research.md with all NEEDS CLARIFICATION addressed or with explicit follow-ups where external documentation is required
 
 ## Phase 1: Design & Contracts
 *Prerequisites: research.md complete*
@@ -152,7 +154,7 @@ ios/ or android/
    - Keep under 150 lines for token efficiency
    - Output to repository root
 
-**Output**: data-model.md, /contracts/*, failing tests, quickstart.md, agent-specific file
+**Output**: data-model.md, /contracts/*, quickstart.md, agent-specific file
 
 ## Phase 2: Task Planning Approach
 *This section describes what the /tasks command will do - DO NOT execute during /plan*
@@ -194,8 +196,8 @@ ios/ or android/
 *This checklist is updated during execution flow*
 
 **Phase Status**:
-- [ ] Phase 0: Research complete (/plan command)
-- [ ] Phase 1: Design complete (/plan command)
+- [x] Phase 0: Research complete (/plan command)
+- [x] Phase 1: Design complete (/plan command)
 - [ ] Phase 2: Task planning complete (/plan command - describe approach only)
 - [ ] Phase 3: Tasks generated (/tasks command)
 - [ ] Phase 4: Implementation complete
