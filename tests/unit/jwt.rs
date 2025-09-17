@@ -41,7 +41,7 @@ fn encrypted_pkcs8_decrypts_to_encoding_key() {
 
     // Call the internal helper via the public path indirectly by ensuring it doesn't error
     // We can't invoke network, but we can call the private function by generating an assertion
-    let url = "https://example/oauth2/token";
+    let url = "https://example/snowflake-audience";
     // SAFETY: using internal helper via function duplication in test module is not accessible; we instead test decryption directly
     let info = pkcs8::EncryptedPrivateKeyInfo::from_der(&enc.to_der()).expect("parse enc");
     let der = info.decrypt(pass).expect("decrypt");
