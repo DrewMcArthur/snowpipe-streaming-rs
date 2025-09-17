@@ -2,7 +2,7 @@
 
 **Feature Branch**: `[006-fix-jwt-generation]`  
 **Created**: 2025-09-17  
-**Status**: Draft  
+**Status**: Ready for PR  
 **Input**: User description: "fix jwt generation by updating the specs from task 002"
 
 ## Execution Flow (main)
@@ -55,29 +55,29 @@ When creating this spec from a user prompt:
 ## User Scenarios & Testing *(mandatory)*
 
 ### Primary User Story
-As a platform operations engineer relying on the Task 002 JWT flow, I need the specification corrected so auto-generated tokens are reliable across Snowflake environments without manual claim tweaking.
+As a developer integrating this library, I need the client to generate the Snowflake keypair JWT locally from a provided private key so that authentication works reliably without calling a non-existent `/oauth2/token` endpoint, and without changing any downstream behavior that already worked.
 
 ### Acceptance Scenarios
-1. Given a service configured with the documented Snowflake account locator, automation user, and unencrypted PKCS#8 private key, When it requests a JWT after applying this specification, Then Snowflake control-plane and streaming ingestion endpoints accept the token without additional adjustments.
-2. Given a configuration that misses a required claim value or uses an unsupported key format, When the service attempts to mint a JWT, Then it receives an actionable message describing the exact remediation and no invalid token is issued.
+1. Given account/user identifiers and a valid private key (path or inline), When constructing the client, Then a JWT is generated locally and used for discovery and scoped-token flows without any call to `/oauth2/token`.
+2. Given missing or invalid key material, When attempting JWT generation, Then the library returns a clear, actionable error without panicking.
 
 ### Edge Cases
-- What happens when a passphrase-protected private key is supplied? The system must stop issuance, explain the unsupported format, and direct the operator to provide an unencrypted PKCS#8 key.
-- How does the system handle clock drift greater than the allowed tolerance? The system must enforce a 120-second leeway, refuse tokens outside that window, and guide operators to resynchronize time sources.
-- How does the system support multi-tenant principals? The system must require users to declare whether the subject represents a Snowflake user or role and document how to obtain dedicated tokens for each tenant.
+- Encrypted PEM keys: Supported when a passphrase is provided. If an encrypted key is supplied without a passphrase, return an actionable error.
+- Clock drift and proactive/retroactive refresh: Out of scope for this change. JWT default validity is one hour; refresh behavior may be addressed in a future feature.
+- Header scheme and downstream flows: No changes. Existing Bearer + `KEYPAIR_JWT` control-plane behavior and ingest scoped-token flow remain as-is.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
-- **FR-001**: The system MUST generate JWTs that satisfy Snowflake acceptance checks for both control-plane APIs and Snowpipe Streaming ingestion without manual claim overrides.
-- **FR-002**: The system MUST document and enforce the mapping of account locator, automation user, and (optional) role identifiers to the appropriate Snowflake JWT claims before a token is issued.
-- **FR-003**: The system MUST restrict signing to RS256 and fail fast with guidance if operators attempt to configure any other algorithm.
-- **FR-004**: The system MUST validate that supplied private keys are unencrypted PKCS#8 material and provide explicit remediation steps when formats or passphrases are unsupported.
-- **FR-005**: The system MUST enforce an expiration window between 60 and 600 seconds and block issuance when requested values fall outside that range or drift beyond the allowed tolerance.
+- **FR-001**: The system MUST generate a keypair JWT locally from provided account/user and private key inputs; it MUST NOT call `/oauth2/token`.
+- **FR-002**: The system MUST accept private key material via path or inline string; it MUST support encrypted PKCS#8 keys when a passphrase is provided and MUST error when missing.
+- **FR-003**: The system MUST preserve existing post-JWT behavior (header scheme, discovery, scoped token) with no changes required for callers.
+- **FR-004**: The system MUST surface actionable errors for invalid keys or signing failures and avoid panics.
+- **FR-005**: The system SHOULD allow configuring expiration duration (default one hour); token refresh strategies are out of scope for this feature.
 
 ### Key Entities *(include if feature involves data)*
-- **JWT Token**: Represents the signed assertion delivered to Snowflake, containing issuer, subject, audience, issued-at, and expiration claims that adhere to the documented mapping.
-- **Principal Configuration**: Captures the Snowflake account locator, automation user or role identifier, target endpoint type (control-plane vs streaming), and validity duration used to request a token.
+- **Private Key Material**: PEM/DER, possibly encrypted PKCS#8 with optional passphrase.
+- **JWT Claims**: issuer, subject, audience, issued-at, expiration, and unique ID.
 
 ---
 
@@ -85,29 +85,29 @@ As a platform operations engineer relying on the Task 002 JWT flow, I need the s
 *GATE: Automated checks run during main() execution*
 
 ### Content Quality
-- [ ] No implementation details (languages, frameworks, APIs)
-- [ ] Focused on user value and business needs
-- [ ] Written for non-technical stakeholders
-- [ ] All mandatory sections completed
+- [x] No implementation details (languages, frameworks, APIs)
+- [x] Focused on user value and business needs
+- [x] Written for non-technical stakeholders
+- [x] All mandatory sections completed
 
 ### Requirement Completeness
-- [ ] No [NEEDS CLARIFICATION] markers remain
-- [ ] Requirements are testable and unambiguous  
-- [ ] Success criteria are measurable
-- [ ] Scope is clearly bounded
-- [ ] Dependencies and assumptions identified
+- [x] No [NEEDS CLARIFICATION] markers remain
+- [x] Requirements are testable and unambiguous  
+- [x] Success criteria are measurable
+- [x] Scope is clearly bounded
+- [x] Dependencies and assumptions identified
 
 ---
 
 ## Execution Status
 *Updated by main() during processing*
 
-- [ ] User description parsed
-- [ ] Key concepts extracted
-- [ ] Ambiguities marked
-- [ ] User scenarios defined
-- [ ] Requirements generated
-- [ ] Entities identified
-- [ ] Review checklist passed
+- [x] User description parsed
+- [x] Key concepts extracted
+- [x] Ambiguities marked
+- [x] User scenarios defined
+- [x] Requirements generated
+- [x] Entities identified
+- [x] Review checklist passed
 
 ---

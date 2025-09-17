@@ -93,8 +93,8 @@ let client = StreamingIngestClient::<YourRow>::new(
 
 Two options are supported:
 
-- Pre-supplied JWT: Provide `SNOWFLAKE_JWT_TOKEN` (or `jwt_token` in config). The client uses the token for control-plane calls using the `Authorization: Snowflake JWT {token}` header.
-- Programmatic keypair JWT generation (recommended): Provide a private key (string or file path). The client generates the control-plane JWT locally (no `/oauth2/token` call) and uses it for control-plane calls.
+- Pre-supplied JWT: Provide `SNOWFLAKE_JWT_TOKEN` (or `jwt_token` in config). The client uses `Authorization: Bearer {token}` with `X-Snowflake-Authorization-Token-Type: KEYPAIR_JWT` for control-plane calls.
+- Programmatic keypair JWT generation (recommended): Provide a private key (string or file path). The client generates the control-plane JWT locally (no `/oauth2/token` call) and uses the same header scheme as above.
 
 Config fields (JSON file or env):
 - `user` (`SNOWFLAKE_USERNAME`) – Snowflake user identifier

@@ -127,7 +127,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
         );
 
         let client = Client::new();
-        let first = client
+        let resp = client
             .post(&url)
             .header(
                 "Authorization",
@@ -141,50 +141,12 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             )
             .header("Content-Type", "application/json")
             .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
-            .body(data.clone())
+            .body(data)
             .send()
+            .await?
+            .error_for_status()?
+            .json::<AppendRowsResponse>()
             .await?;
-
-        let resp = if first.status().is_success() {
-            first.json::<AppendRowsResponse>().await?
-        } else {
-            let status1 = first.status();
-            let text1 = first.text().await.unwrap_or_default();
-            let expired = status1.as_u16() == 401
-                || status1.as_u16() == 403
-                || text1.to_lowercase().contains("expired");
-            if expired {
-                // Attempt one refresh of scoped token (refresh JWT proactively if needed)
-                let _ = self.client.ensure_fresh_jwt().await; // best-effort
-                self.client.get_scoped_token().await?;
-                let second = Client::new()
-                    .post(&url)
-                    .header(
-                        "Authorization",
-                        format!(
-                            "Bearer {}",
-                            self.client
-                                .scoped_token
-                                .as_ref()
-                                .expect("scoped token not set")
-                        ),
-                    )
-                    .header("Content-Type", "application/json")
-                    .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
-                    .body(data)
-                    .send()
-                    .await?;
-                if second.status().is_success() {
-                    second.json::<AppendRowsResponse>().await?
-                } else {
-                    let status2 = second.status();
-                    let body2 = second.text().await.unwrap_or_default();
-                    return Err(crate::Error::Http(status2, body2));
-                }
-            } else {
-                return Err(crate::Error::Http(status1, text1));
-            }
-        };
 
         self.last_pushed_offset_token = offset;
         self.continuation_token = resp.next_continuation_token;

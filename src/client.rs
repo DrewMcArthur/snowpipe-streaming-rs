@@ -7,28 +7,15 @@ use rsa::pkcs1::EncodeRsaPrivateKey;
 use serde::Serialize;
 use tracing::{error, info};
 
-use crate::{
-    channel::StreamingIngestChannel, config::Config, errors::Error, token_cache::TokenCache,
-};
+use crate::{channel::StreamingIngestChannel, config::Config, errors::Error};
 
-fn generate_assertion(
-    audience: &str,
-    cfg: &crate::config::Config,
-) -> Result<(String, i64, i64), Error> {
+fn generate_assertion(audience: &str, cfg: &crate::config::Config) -> Result<String, Error> {
     // Test helper: allow bypass via special prefix
     if let Some(ref raw) = cfg.private_key {
         let prefix = "TEST://assertion:";
         if let Some(rest) = raw.strip_prefix(prefix) {
             // No iat/exp context in bypass; pick small window forcing refresh paths in tests if needed
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| Error::Config(format!("Time error: {e}")))?
-                .as_secs() as i64;
-            return Ok((
-                rest.to_string(),
-                now,
-                now + cfg.jwt_exp_secs.unwrap_or(3600) as i64,
-            ));
+            return Ok(rest.to_string());
         }
     }
     let iss = cfg.user.clone();
@@ -109,7 +96,7 @@ fn generate_assertion(
     let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     let assertion = jsonwebtoken::encode(&header, &claims, &enc_key)
         .map_err(|e| Error::JwtSign(format!("JWT signing failed: {e}")))?;
-    Ok((assertion, iat_u, exp_i))
+    Ok(assertion)
 }
 
 #[derive(Clone)]
@@ -124,8 +111,6 @@ pub struct StreamingIngestClient<R> {
     auth_token_type: String,
     pub ingest_host: Option<String>,
     pub scoped_token: Option<String>,
-    config: Config,
-    jwt_cache: Option<TokenCache>,
 }
 
 impl<R: Serialize + Clone> StreamingIngestClient<R> {
@@ -173,39 +158,20 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             auth_token_type: String::from("KEYPAIR_JWT"),
             ingest_host: None,
             scoped_token: None,
-            config: config.clone(),
-            jwt_cache: None,
         };
         if jwt_token.is_empty() {
             // Generate a control-plane JWT locally from the provided private key
             // Audience is the control host (no /oauth2/token endpoint exists for keypair JWT)
-            let (assertion, iat, exp) = generate_assertion(&client.control_host, &client.config)?;
-            client.jwt_token = assertion.clone();
-            client.jwt_cache = Some(TokenCache::new(assertion, iat, exp));
+            let assertion = generate_assertion(&client.control_host, &config)?;
+            client.jwt_token = assertion;
             client.auth_token_type = String::from("KEYPAIR_JWT");
         } else {
             client.jwt_token = jwt_token;
             client.auth_token_type = String::from("KEYPAIR_JWT");
         }
-        client.ensure_fresh_jwt().await?;
         client.discover_ingest_host().await?;
         client.get_scoped_token().await?;
         Ok(client)
-    }
-
-    pub(crate) async fn ensure_fresh_jwt(&mut self) -> Result<(), Error> {
-        if let Some(ref cache) = self.jwt_cache {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| Error::Config(format!("Time error: {e}")))?
-                .as_secs() as i64;
-            if cache.needs_refresh(now, 300) {
-                let (assertion, iat, exp) = generate_assertion(&self.control_host, &self.config)?;
-                self.jwt_token = assertion.clone();
-                self.jwt_cache = Some(TokenCache::new(assertion, iat, exp));
-            }
-        }
-        Ok(())
     }
 
     // Removed get_control_plane_token; JWT is generated locally during construction.
@@ -218,7 +184,11 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         let client = Client::new();
         let resp = client
             .get(&url)
-            .header("Authorization", format!("Snowflake JWT {}", self.jwt_token))
+            .header("Authorization", format!("Bearer {}", self.jwt_token))
+            .header(
+                "X-Snowflake-Authorization-Token-Type",
+                self.auth_token_type.as_str(),
+            )
             .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
             .send()
             .await?;
@@ -253,12 +223,8 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
                 self.ingest_host.as_ref().expect("Ingest host not set")
             ))
             .send()
-            .await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(Error::Http(status, body));
-        }
+            .await?
+            .error_for_status()?;
         let tok = resp.text().await?;
         info!("scoped token acquired (len={})", tok.len());
         self.scoped_token = Some(tok);

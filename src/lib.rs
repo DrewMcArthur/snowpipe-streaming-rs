@@ -2,7 +2,6 @@ mod channel;
 mod client;
 mod config;
 mod errors;
-mod token_cache;
 mod types;
 
 pub use channel::StreamingIngestChannel;

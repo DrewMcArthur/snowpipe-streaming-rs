@@ -73,13 +73,17 @@ async fn client_must_not_call_oauth2_token_when_private_key_provided() {
 }
 
 #[tokio::test]
-async fn discovery_uses_snowflake_jwt_authorization_header() {
+async fn discovery_uses_bearer_with_keypair_header() {
     let server = MockServer::start().await;
 
-    // Expect Snowflake JWT scheme, not Bearer.
+    // Expect Bearer scheme with KEYPAIR_JWT token type header.
     Mock::given(method("GET"))
         .and(path("/v2/streaming/hostname"))
-        .and(header("Authorization", "Snowflake JWT dummy"))
+        .and(header("Authorization", "Bearer dummy"))
+        .and(header(
+            "X-Snowflake-Authorization-Token-Type",
+            "KEYPAIR_JWT",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(server.uri()))
         .mount(&server)
         .await;
@@ -105,7 +109,5 @@ async fn discovery_uses_snowflake_jwt_authorization_header() {
     )
     .await;
 
-    // Current implementation uses `Bearer` and will fail to match the mock, causing an error.
-    assert!(res.is_ok(), "discovery must use Snowflake JWT header scheme");
+    assert!(res.is_ok(), "discovery must use Bearer + KEYPAIR_JWT header scheme");
 }
-
