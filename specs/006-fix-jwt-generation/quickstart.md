@@ -7,19 +7,24 @@ Overview
 
 Usage (Rust)
 ```rust
-use snowpipe_streaming::{Client, AuthConfig, KeySource};
+use snowpipe_streaming::{Config, StreamingIngestClient};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let auth = AuthConfig::with_key_path(
-        "my_account",            // account identifier
+    let cfg = Config::from_values(
         "user_name",             // login name
-        "/path/to/rsa_key.pem",  // private key path
-    )
-    .with_audience("snowflake")
-    .with_expiry_secs(3600);
+        "my_account",            // account identifier
+        "https://my-account-host",
+        None,                     // jwt_token (None => programmatic)
+        None,                     // private_key (string)
+        Some("/path/to/rsa_key.pem".into()), // private_key_path
+        None,                     // private_key_passphrase
+        Some(3600),               // jwt_exp_secs
+    );
 
-    let mut client = Client::new(auth)?; // Generates JWT at construction
+    let mut client = StreamingIngestClient::<serde_json::Value>::new(
+        "svc-client", "DB", "SCHEMA", "PIPE", cfg,
+    ).await?; // Generates JWT at construction
 
     // Use the client; JWT auto-attached in Authorization header
     // client.insert_rows(...).await?;
@@ -30,12 +35,16 @@ async fn main() -> anyhow::Result<()> {
 
 Inline key (PEM string)
 ```rust
-let auth = AuthConfig::with_inline_key(
-    "my_account",
+let cfg = Config::from_values(
     "user_name",
-    include_str!("./dev_rsa_key.pem"), // or read from env/secret manager
-)
-.with_passphrase(Some("secret")); // if encrypted PEM
+    "my_account",
+    "https://my-account-host",
+    None,
+    Some(include_str!("./dev_rsa_key.pem").into()), // or read from env/secret manager
+    None,
+    Some("secret".into()), // if encrypted PEM
+    Some(3600),
+);
 ```
 
 Refresh Behavior

@@ -21,11 +21,10 @@
 ## Acceptance Criteria
 
 - New constructor exists and is used in tests without reading files/env.
-- All prior features (OAuth2 `/oauth2/token`, encrypted PEM, timeouts) operate via the new path.
+- All prior features (client-side keypair JWT generation, encrypted PEM, timeouts) operate via the new path.
 - CI passes: clippy/fmt/tests.
 
 ## Notes / Open Questions
 
 - Should the new constructor take `&Config`, owned `Config`, or a builder pattern? [NEEDS CLARIFICATION]
 - Deprecation plan for `ConfigLocation` constructor timing and warnings. [NEEDS CLARIFICATION]
-
