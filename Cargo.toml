@@ -20,6 +20,7 @@ uuid = { version = "1.10.0", features = ["v4"] }
 urlencoding = "2.1.3"
 pkcs8 = { version = "0.10.2", features = ["pkcs5", "encryption"] }
 rsa = "0.9.6"
+sha2 = { version = "0.10.9", registry = "shared-package-domain-cargo-store" }
 
 [dev-dependencies]
 rand = "0.8.5"
