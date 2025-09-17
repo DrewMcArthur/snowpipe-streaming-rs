@@ -191,7 +191,7 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             .await?;
 
         let status = resp.status();
-        if ! status.is_success() {
+        if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             return Err(Error::Http(status, body));
         }
