@@ -163,7 +163,6 @@ fn build_assertion(cfg: &Config, log_clamp: bool) -> Result<AssertionBundle, Err
     })
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn generate_assertion(cfg: &Config) -> Result<String, Error> {
     Ok(build_assertion(cfg, true)?.token)
 }
