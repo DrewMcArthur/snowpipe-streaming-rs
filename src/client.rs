@@ -10,9 +10,8 @@ use tracing::{error, info};
 use crate::{channel::StreamingIngestChannel, config::Config, errors::Error};
 
 /// Returns base64 encoded fingerprint of a public key derived from the RSA key.
-fn compute_fingerprint(key: &rsa::RsaPrivateKey) -> Result<String, Error> {
-    let public_key = key.to_public_key();
-    let pkcs1 = public_key
+fn compute_fingerprint(key: &rsa::RsaPublicKey) -> Result<String, Error> {
+    let pkcs1 = key
         .to_pkcs1_der()
         .map_err(|e| Error::Key(format!("PKCS#1 DER encode failed: {e}")))?;
     let fingerprint = {
@@ -84,7 +83,7 @@ fn generate_assertion(cfg: &Config) -> Result<String, Error> {
         load_rsa_private_key_from_pem(&private_key, cfg.private_key_passphrase.as_deref())?;
     let fingerprint = match cfg.public_key_fp.as_ref() {
         Some(fp) => fp.clone(),
-        None => compute_fingerprint(&rsa_key)?,
+        None => compute_fingerprint(&rsa_key.to_public_key())?,
     };
     let account_norm = cfg.account.to_uppercase().replace('.', "-");
     let user_norm = name.to_uppercase();
@@ -307,14 +306,15 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use base64::Engine;
-    use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
-    use pkcs8::EncodePrivateKey;
+    use base64::engine::general_purpose::{self, STANDARD, URL_SAFE_NO_PAD};
+    use pkcs8::{DecodePublicKey, EncodePrivateKey};
     use rand::thread_rng;
-    use rsa::RsaPrivateKey;
+    use rsa::{RsaPrivateKey, RsaPublicKey};
     use serde_json::Value;
 
     use super::generate_assertion;
     use crate::Config;
+    use crate::client::compute_fingerprint;
 
     fn now_secs() -> u64 {
         SystemTime::now()
@@ -472,5 +472,14 @@ mod tests {
         );
 
         generate_assertion(&cfg).expect("should generate assertion with encrypted key");
+    }
+
+    #[test]
+    fn correctly_generates_fingerprint() {
+        let b64 = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2RmwUycPmCSycr6WgS/NXcffCs6U025B+rT2zQDl1UWeKcSIh1TSdh7aHTyMuDaWcu3u+3+93L443D2nXJntZvcg8JV08a/QN+bI3RGdVabGL74ewqn3fuGleWYsIz3oLhse6zwbrhLGdVsD3ADOIl/nAmjOnalyuJ0fUjPgxLwRACEV5WIchVqrkG3wxRJCsj+ze8HrFMMsZ2rEtZb5XwoUiw5gbuvFhrU1y6b821Efe/ajI7h+h8qIIXcqTWSFZj93dmqWl8jUU9GkRouSVD8PrHUu0LMRNNsJ/ZC5e0u6mjVc47PyTKTUn+2q0ySoyWLRkyF0SWzqD4WI12gzIQIDAQAB";
+        let der = general_purpose::STANDARD.decode(b64).unwrap();
+        let pubkey = RsaPublicKey::from_public_key_der(&der).unwrap();
+        let fp = "SHA256:xZx8qqibbh7x0CTGVPZNf3z463BMMn7vIoIxSUJQ/Bc=";
+        assert_eq!(compute_fingerprint(&pubkey).unwrap(), fp);
     }
 }
