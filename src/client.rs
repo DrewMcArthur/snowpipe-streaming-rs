@@ -52,9 +52,10 @@ fn load_rsa_private_key_from_pem(
     }
 
     if let Some(pass) = passphrase
-        && let Ok(key) = rsa::RsaPrivateKey::from_pkcs8_encrypted_pem(pem_str, pass) {
-            return Ok(key);
-        }
+        && let Ok(key) = rsa::RsaPrivateKey::from_pkcs8_encrypted_pem(pem_str, pass)
+    {
+        return Ok(key);
+    }
     if let Ok(key) = rsa::RsaPrivateKey::from_pkcs8_pem(pem_str) {
         return Ok(key);
     }
