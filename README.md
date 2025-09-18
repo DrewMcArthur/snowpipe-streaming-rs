@@ -61,14 +61,21 @@ Example `config.json`:
   "private_key": "<optional PEM, or use private_key_path>",
   "private_key_path": "/path/to/private_key.pem",
   "private_key_passphrase": "<optional for encrypted keys>",
-  "jwt_exp_secs": 60
+  "jwt_exp_secs": 60,
+  "refresh_threshold_secs": 120,
+  "refresh_min_cooldown_secs": 300,
+  "refresh_max_skew_secs": 30,
+  "retry_max_attempts": 4,
+  "retry_initial_delay_ms": 200,
+  "retry_multiplier": 1.8,
+  "retry_max_delay_ms": 5000,
+  "retry_jitter": "full"
 }
 ```
 
 ## Testing
-- Run all tests: `cargo test`.
-- Integration tests use a local mocked HTTP server (wiremock) to emulate Snowflake endpoints; they do not require network or real credentials.
-- Tests use a per-test JSON config file to avoid process-wide env races.
+- Run the full suite with `cargo test`. Integration tests spin up `wiremock` servers and require the host to allow binding ephemeral TCP ports; if your CI environment restricts networking, run the suite locally instead.
+- Tests use per-test JSON config files to avoid process-wide env races and rely on the new token guard to refresh near-expiry JWTs.
 
 Example test setup (simplified):
 ```
@@ -105,6 +112,14 @@ Config fields (JSON file or env):
 - `private_key_path` (`SNOWFLAKE_PRIVATE_KEY_PATH`) – Optional path to private key PEM file
 - `private_key_passphrase` (`SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`) – Passphrase for encrypted PKCS#8 private keys
 - `jwt_exp_secs` (`SNOWFLAKE_JWT_EXP_SECS`) – Optional JWT lifetime in seconds (default 3600)
+- `refresh_threshold_secs` (`SNOWPIPE_REFRESH_THRESHOLD_SECONDS`) – Force refresh when remaining TTL ≤ value (defaults to min(120s, 20% of TTL))
+- `refresh_min_cooldown_secs` (`SNOWPIPE_REFRESH_MIN_COOLDOWN_SECONDS`) – Minimum time between successful refreshes (default 300)
+- `refresh_max_skew_secs` (`SNOWPIPE_REFRESH_MAX_SKEW_SECONDS`) – Max clock skew tolerance when evaluating expiry (default 30)
+- `retry_max_attempts` (`SNOWPIPE_RETRY_MAX_ATTEMPTS`) – Max attempts for guarded HTTP calls (default 4)
+- `retry_initial_delay_ms` (`SNOWPIPE_RETRY_INITIAL_DELAY_MS`) – Initial backoff delay in ms (default 200)
+- `retry_multiplier` (`SNOWPIPE_RETRY_MULTIPLIER`) – Backoff multiplier (default 1.8)
+- `retry_max_delay_ms` (`SNOWPIPE_RETRY_MAX_DELAY_MS`) – Max backoff delay in ms (default 5000)
+- `retry_jitter` (`SNOWPIPE_RETRY_JITTER`) – Jitter strategy (`full` or `decorrelated`, default `full`)
 
 Example (programmatic):
 ```
@@ -149,6 +164,9 @@ Close semantics:
 ## Errors and logging
 - Common errors: HTTP failures, invalid/missing configuration, private key parsing/decryption issues, request too large.
 - Enable logs with `tracing_subscriber` in tests/examples to observe discovery, token acquisition, and ingestion progress.
+
+## Known limitations
+- Control-plane discovery and scoped-token acquisition use the new token guard and centralized retry logic. Ingest operations continue to use their existing retry paths and will adopt the shared context in an upcoming release.
 
 ## Examples
 - A minimal example is available at `examples/example.rs` (requires the `unstable-example` feature).

@@ -13,6 +13,22 @@ pub struct Config {
     pub private_key_path: Option<String>,
     pub private_key_passphrase: Option<String>,
     pub jwt_exp_secs: Option<u64>,
+    #[serde(default)]
+    pub refresh_threshold_secs: Option<u64>,
+    #[serde(default)]
+    pub refresh_min_cooldown_secs: Option<u64>,
+    #[serde(default)]
+    pub refresh_max_skew_secs: Option<u64>,
+    #[serde(default)]
+    pub retry_max_attempts: Option<u8>,
+    #[serde(default)]
+    pub retry_initial_delay_ms: Option<u64>,
+    #[serde(default)]
+    pub retry_multiplier: Option<f32>,
+    #[serde(default)]
+    pub retry_max_delay_ms: Option<u64>,
+    #[serde(default)]
+    pub retry_jitter: Option<String>,
 }
 
 impl Config {
@@ -36,6 +52,14 @@ impl Config {
             private_key_path,
             private_key_passphrase,
             jwt_exp_secs,
+            refresh_threshold_secs: None,
+            refresh_min_cooldown_secs: None,
+            refresh_max_skew_secs: None,
+            retry_max_attempts: None,
+            retry_initial_delay_ms: None,
+            retry_multiplier: None,
+            retry_max_delay_ms: None,
+            retry_jitter: None,
         }
     }
 
@@ -65,7 +89,23 @@ fn read_config_from_env() -> Result<Config, Error> {
             .ok()
             .and_then(|s| s.parse::<u64>().ok()),
         jwt_token: std::env::var("SNOWFLAKE_JWT_TOKEN").unwrap_or_default(),
+        refresh_threshold_secs: env_u64("SNOWPIPE_REFRESH_THRESHOLD_SECONDS"),
+        refresh_min_cooldown_secs: env_u64("SNOWPIPE_REFRESH_MIN_COOLDOWN_SECONDS"),
+        refresh_max_skew_secs: env_u64("SNOWPIPE_REFRESH_MAX_SKEW_SECONDS"),
+        retry_max_attempts: std::env::var("SNOWPIPE_RETRY_MAX_ATTEMPTS")
+            .ok()
+            .and_then(|s| s.parse::<u8>().ok()),
+        retry_initial_delay_ms: env_u64("SNOWPIPE_RETRY_INITIAL_DELAY_MS"),
+        retry_multiplier: std::env::var("SNOWPIPE_RETRY_MULTIPLIER")
+            .ok()
+            .and_then(|s| s.parse::<f32>().ok()),
+        retry_max_delay_ms: env_u64("SNOWPIPE_RETRY_MAX_DELAY_MS"),
+        retry_jitter: std::env::var("SNOWPIPE_RETRY_JITTER").ok(),
     })
+}
+
+fn env_u64(var: &str) -> Option<u64> {
+    std::env::var(var).ok().and_then(|s| s.parse::<u64>().ok())
 }
 
 // AWS secret loading removed; prefer loading in app code and deserializing into Config.

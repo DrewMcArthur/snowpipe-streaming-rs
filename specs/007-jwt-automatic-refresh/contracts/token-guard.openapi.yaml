@@ -1,0 +1,156 @@
+openapi: 3.1.0
+info:
+  title: Snowpipe Streaming SDK Token Guard
+  version: 0.1.0
+  description: |
+    Logical contract for the SDK components that ensure JWT freshness and centralized retry behavior.
+servers:
+  - url: https://sdk.local
+paths:
+  /sdk/token/ensure:
+    post:
+      summary: Validate current token freshness and optionally refresh before a request is dispatched.
+      operationId: ensureTokenFreshness
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnsureTokenRequest'
+      responses:
+        '200':
+          description: Token is fresh and ready for reuse.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnsureTokenResponse'
+        '202':
+          description: Token refresh triggered; caller must retry with the returned token snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnsureTokenResponse'
+        '503':
+          description: Refresh failed after exhausting retry policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshError'
+  /sdk/request/send:
+    post:
+      summary: Send a Snowpipe ingest request guarded by centralized retry logic.
+      operationId: sendIngestRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DispatchRequest'
+      responses:
+        '202':
+          description: Request accepted by Snowflake ingest endpoint.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DispatchAccepted'
+        '401':
+          description: Authentication failure after refresh attempts; caller should force refresh and retry.
+        '429':
+          description: Retry budget exhausted due to upstream throttling.
+        '500':
+          description: Non-retriable error surfaced to the caller.
+components:
+  schemas:
+    EnsureTokenRequest:
+      type: object
+      required: [channel, token]
+      properties:
+        channel:
+          type: string
+          description: Channel identifier for logging context.
+        token:
+          $ref: '#/components/schemas/TokenSnapshot'
+    TokenSnapshot:
+      type: object
+      required: [value, issued_at, expires_at]
+      properties:
+        value:
+          type: string
+        issued_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        remaining_seconds:
+          type: integer
+          minimum: 0
+        scoped:
+          type: boolean
+    EnsureTokenResponse:
+      type: object
+      required: [token, refresh_applied]
+      properties:
+        token:
+          $ref: '#/components/schemas/TokenSnapshot'
+        refresh_applied:
+          type: boolean
+        attempts:
+          type: integer
+          description: Number of refresh attempts executed.
+    RefreshError:
+      type: object
+      required: [error_code, message]
+      properties:
+        error_code:
+          type: string
+          enum: [refresh_failed, non_retriable]
+        message:
+          type: string
+        last_attempt_at:
+          type: string
+          format: date-time
+    DispatchRequest:
+      type: object
+      required: [operation, payload, retry_plan]
+      properties:
+        operation:
+          type: string
+          enum: [discover_ingest_host, get_scoped_token, open_channel, append_rows]
+        payload:
+          type: object
+          additionalProperties: true
+        retry_plan:
+          $ref: '#/components/schemas/RetryPlan'
+        token:
+          $ref: '#/components/schemas/TokenSnapshot'
+    RetryPlan:
+      type: object
+      required: [max_attempts, initial_delay_ms, multiplier, max_delay_ms, jitter]
+      properties:
+        max_attempts:
+          type: integer
+          minimum: 1
+        initial_delay_ms:
+          type: integer
+          minimum: 0
+        multiplier:
+          type: number
+          minimum: 1
+        max_delay_ms:
+          type: integer
+          minimum: 0
+        jitter:
+          type: string
+          enum: [full, decorrelated]
+    DispatchAccepted:
+      type: object
+      required: [operation, attempts, final_status]
+      properties:
+        operation:
+          type: string
+        attempts:
+          type: integer
+        final_status:
+          type: string
+          enum: [success, forwarded_to_caller]

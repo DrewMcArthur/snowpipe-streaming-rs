@@ -2,12 +2,18 @@ mod channel;
 mod client;
 mod config;
 mod errors;
+mod request_context;
 mod types;
+
+pub mod retry;
+pub mod telemetry;
+pub mod token;
 
 pub use channel::StreamingIngestChannel;
 pub use client::StreamingIngestClient;
 pub use config::Config;
 pub use errors::Error;
+pub use request_context::RequestDispatchContext;
 
 #[cfg(test)]
 mod tests {

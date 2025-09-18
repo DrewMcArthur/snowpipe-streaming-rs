@@ -7,3 +7,13 @@ This repository follows GitHub's spec-kit workflows.
 - There are no additional constraints beyond what each prompt specifies.
 
 Example: for `/specify these are the arguments`, use `.github/prompts/specify.prompt.md` with `$ARGUMENTS="these are the arguments"` and follow the template verbatim.
+
+---
+
+## Active Technologies
+- Rust 1.78+ (edition 2024) + reqwest 0.12 (007-jwt-automatic-refresh)
+
+## Recent Changes
+- 007-jwt-automatic-refresh: Added Rust 1.78+ (edition 2024) + reqwest 0.12
+
+Last updated: 2025-09-17
