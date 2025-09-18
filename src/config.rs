@@ -8,8 +8,8 @@ pub struct Config {
     pub login: Option<String>,
     pub account: String,
     pub url: String,
-    #[serde(default)]
-    pub jwt_token: String,
+    pub jwt_token: Option<String>,
+    pub public_key_fingerprint: Option<String>, 
     pub private_key: Option<String>,
     pub private_key_path: Option<String>,
     pub private_key_passphrase: Option<String>,
@@ -24,6 +24,7 @@ impl Config {
         account: impl Into<String>,
         url: impl Into<String>,
         jwt_token: Option<String>,
+        public_key_fingerprint: Option<String>,
         private_key: Option<String>,
         private_key_path: Option<String>,
         private_key_passphrase: Option<String>,
@@ -34,7 +35,8 @@ impl Config {
             login,
             account: account.into(),
             url: url.into(),
-            jwt_token: jwt_token.unwrap_or_default(),
+            jwt_token,
+            public_key_fingerprint,
             private_key,
             private_key_path,
             private_key_passphrase,
@@ -62,13 +64,14 @@ fn read_config_from_env() -> Result<Config, Error> {
             .map_err(|_| Error::Config("Missing SNOWFLAKE_ACCOUNT env var".to_string()))?,
         url: std::env::var("SNOWFLAKE_URL")
             .map_err(|_| Error::Config("Missing SNOWFLAKE_URL env var".to_string()))?,
+        public_key_fingerprint: std::env::var("SNOWFLAKE_PUBLIC_KEY_FINGERPRINT").ok(),
         private_key: std::env::var("SNOWFLAKE_PRIVATE_KEY").ok(),
         private_key_path: std::env::var("SNOWFLAKE_PRIVATE_KEY_PATH").ok(),
         private_key_passphrase: std::env::var("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE").ok(),
         jwt_exp_secs: std::env::var("SNOWFLAKE_JWT_EXP_SECS")
             .ok()
             .and_then(|s| s.parse::<u64>().ok()),
-        jwt_token: std::env::var("SNOWFLAKE_JWT_TOKEN").unwrap_or_default(),
+        jwt_token: std::env::var("SNOWFLAKE_JWT_TOKEN").ok(),
     })
 }
 
@@ -94,7 +97,7 @@ mod tests {
         assert_eq!(cfg.user, "user");
         assert_eq!(cfg.account, "acct");
         assert_eq!(cfg.url, "https://example");
-        assert_eq!(cfg.jwt_token, "jwt");
+        assert_eq!(cfg.jwt_token, Some("jwt".into()));
     }
 
     #[test]

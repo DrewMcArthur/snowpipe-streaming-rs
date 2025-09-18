@@ -5,57 +5,9 @@ use pkcs8::der::Decode;
 use reqwest::Client;
 use rsa::pkcs1::EncodeRsaPrivateKey;
 use serde::Serialize;
-use sha2::Digest;
 use tracing::{error, info};
 
 use crate::{channel::StreamingIngestChannel, config::Config, errors::Error};
-
-fn get_fingerprint(cfg: &crate::config::Config) -> Result<String, Error> {
-    let pem_bytes = if let Some(ref key) = cfg.private_key {
-        key.as_bytes().to_vec()
-    } else if let Some(ref path) = cfg.private_key_path {
-        std::fs::read(path).map_err(|e| Error::Key(format!("Failed reading private key: {e}")))?
-    } else {
-        return Err(Error::Config(
-            "Missing private key for JWT generation: set SNOWFLAKE_PRIVATE_KEY or private_key/private_key_path in config"
-                .into(),
-        ));
-    };
-    // Parse PEM and handle encrypted PKCS#8
-    let der_bytes = match pem::parse_many(&pem_bytes) {
-        Ok(blocks) if !blocks.is_empty() => {
-            let block = &blocks[0];
-            match block.tag() {
-                "ENCRYPTED PRIVATE KEY" => {
-                    let pass = cfg.private_key_passphrase.as_deref().ok_or_else(|| {
-                        Error::Key("Encrypted private key provided but no passphrase set".into())
-                    })?;
-                    let info = pkcs8::EncryptedPrivateKeyInfo::from_der(block.contents())
-                        .map_err(|e| Error::Key(format!("Encrypted PKCS#8 parse error: {e}")))?;
-                    info.decrypt(pass)
-                        .map_err(|e| Error::Key(format!("PKCS#8 decryption failed: {e}")))?
-                        .as_bytes()
-                        .to_vec()
-                }
-                "PRIVATE KEY" => block.contents().to_vec(),
-                _ => pem_bytes.clone(),
-            }
-        }
-        _ => pem_bytes.clone(),
-    };
-    let rsa = rsa::RsaPrivateKey::from_pkcs8_der(&der_bytes)
-        .map_err(|e| Error::Key(format!("PKCS#8 to RSA parse failed: {e}")))?;
-    let der = rsa
-        .to_pkcs1_der()
-        .map_err(|e| Error::Key(format!("PKCS#1 DER encode failed: {e}")))?;
-    let digest = sha2::Sha256::digest(der.as_bytes());
-    let fingerprint = digest
-        .iter()
-        .map(|b| format!("{:02X}", b))
-        .collect::<Vec<String>>()
-        .join(":");
-    Ok(fingerprint)
-}
 
 fn generate_assertion(cfg: &crate::config::Config) -> Result<String, Error> {
     // Test helper: allow bypass via special prefix
@@ -70,28 +22,28 @@ fn generate_assertion(cfg: &crate::config::Config) -> Result<String, Error> {
         Some(login) => login,
         None => &cfg.user,
     };
-    let fingerprint = get_fingerprint(cfg)?;
+    let fingerprint = cfg.public_key_fingerprint.as_ref().unwrap_or_else(|| { panic!("Missing public_key_fingerprint in config for JWT generation") });
     let iss = format!("{}.{}.SHA256:{}", cfg.account, name, fingerprint);
     let sub = format!("{}.{}", cfg.account, name);
-    let iat_u = std::time::SystemTime::now()
+    let iat = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| Error::Config(format!("Time error: {e}")))?
-        .as_secs() as i64;
-    let exp_secs = cfg.jwt_exp_secs.unwrap_or(3600) as i64;
-    let exp_i = iat_u + exp_secs;
+        .as_secs();
+    let exp_secs = cfg.jwt_exp_secs.unwrap_or(3600);
+    let exp = iat + exp_secs;
 
     #[derive(serde::Serialize)]
     struct Claims {
         iss: String,
         sub: String,
-        iat: usize,
-        exp: usize,
+        iat: u64,
+        exp: u64,
     }
     let claims = Claims {
         iss,
         sub,
-        iat: iat_u as usize,
-        exp: exp_i as usize,
+        iat,
+        exp
     };
 
     let pem_bytes = if let Some(ref key) = cfg.private_key {
@@ -192,7 +144,10 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
                 control_host, e
             ))
         })?;
-        let jwt_token = config.jwt_token.clone();
+        let jwt_token = match config.jwt_token.as_ref() {
+            Some(token) if !token.is_empty() => token.clone(),
+            _ => generate_assertion(&config)?,
+        };
         let account = config.account.clone();
         let mut client = StreamingIngestClient {
             _marker: PhantomData,
@@ -201,21 +156,11 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             pipe_name: pipe_name.to_string(),
             account,
             control_host,
-            jwt_token: String::new(),
+            jwt_token,
             auth_token_type: String::from("KEYPAIR_JWT"),
             ingest_host: None,
             scoped_token: None,
         };
-        if jwt_token.is_empty() {
-            // Generate a control-plane JWT locally from the provided private key
-            // Audience is the control host (no /oauth2/token endpoint exists for keypair JWT)
-            let assertion = generate_assertion(&config)?;
-            client.jwt_token = assertion;
-            client.auth_token_type = String::from("KEYPAIR_JWT");
-        } else {
-            client.jwt_token = jwt_token;
-            client.auth_token_type = String::from("KEYPAIR_JWT");
-        }
         client.discover_ingest_host().await?;
         client.get_scoped_token().await?;
         Ok(client)
