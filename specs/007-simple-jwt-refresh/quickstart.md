@@ -17,7 +17,7 @@
 ## Run Example (after implementation)
 1. Build: `cargo build`.  
 2. Execute example pipeline: `cargo run --example example --features unstable-example`.  
-3. Watch logs for entries such as `refreshing JWT (margin hit)` and `retrying request after 401`.
+3. Watch logs for entries such as `refreshing JWT (margin hit)`, `retrying request after 401`, and `received 429; sleeping 2s before retry`.
 
 ## Validate Behavior
 1. Unit tests: `cargo test client::crypto::tests::clamp_and_refresh`.  
@@ -26,5 +26,5 @@
 
 ## Troubleshooting
 - Repeated 401s after retry indicate invalid credentials; verify private key and Snowflake grants.  
-- 429 responses trigger automatic 1–3s back-off; persistent throttling suggests upstream rate limits.  
+- 429 responses trigger an automatic 2s back-off; persistent throttling suggests upstream rate limits.  
 - Ensure system clock accuracy; significant skew may cause premature refresh attempts.

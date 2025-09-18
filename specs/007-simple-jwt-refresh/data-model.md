@@ -19,10 +19,10 @@
 - **Purpose**: Encapsulates automatic retry behavior for Snowflake responses.  
 - **Attributes**:  
   - `max_unauthorized_retries: u8` – fixed at 1.  
-  - `backoff_range: (Duration, Duration)` – randomized delay window for 429 responses (1s–3s).  
+  - `backoff_delay: Duration` – fixed 2-second delay for 429 responses.  
   - `last_backoff: Option<Instant>` – optional telemetry hook.  
 - **Validation Rules**:  
-  - `backoff_range.0 >= 1s`, `backoff_range.1 <= 3s`, and `start <= end`.
+  - `backoff_delay` must equal two seconds (enforced at construction).
 
 ### ClientConfig (extended)
 - **Fields**:  
@@ -38,16 +38,16 @@
 - `SnowpipeClient` owns a `JwtContext` guarded by an async mutex to serialize refresh operations.  
 - Before each request, client checks `JwtContext.needs_refresh()`; if true, it signs a new token using the private key.  
 - On 401: client logs a warning, refreshes token, retries once, and surfaces `Error::Auth` on repeat failure.  
-- On 429: client sleeps for randomized 1–3 seconds before retrying; refresh logic still applies if margin exceeded.  
+- On 429: client logs a warning, sleeps exactly two seconds, then retries; refresh logic still applies if margin exceeded.  
 - When clamping occurs, context records `was_clamped` to avoid duplicate warnings.
 
 ## Derived/Computed Values
 - `remaining_ttl()` – returns `expires_at - now`, clamped at zero.  
 - `needs_refresh()` – true when token missing or `remaining_ttl() <= refresh_margin`.  
 - `clamp_warning_needed()` – indicates whether to log about adjusted expiration.  
-- `next_backoff_delay()` – random duration within configured range for 429 responses.
+- `next_backoff_delay()` – returns the fixed two-second delay for 429 responses.
 
 ## Notes
 - No persistent or shared state; all credentials and tokens remain in process memory.  
-- Randomized back-off uses thread-safe RNG (e.g., `rand::Rng`).  
+- Back-off uses a fixed two-second `tokio::time::sleep`; no RNG required.  
 - Deprecation messaging for `user_supplied_jwt` should provide migration guidance but continue functioning until removal.

@@ -21,14 +21,14 @@ The Snowpipe client must guarantee a valid JWT for every outbound HTTP request w
 - **Workflow**:
   1. Call `ensure_valid_jwt()`; attach `Authorization: Bearer {token}`.  
   2. Dispatch request via `reqwest`.  
-  3. If response status == 429, sleep random 1–3 seconds, optionally refresh if margin requires, then retry once.  
+  3. If response status == 429, log a warning, sleep exactly 2 seconds, optionally refresh if margin requires, then retry once.  
   4. If response status == 401, log warning, refresh token, and retry once.  
   5. Return retry response. On second 401, surface `Error::Auth`; on other errors, propagate existing behavior.
 
 ### Logging / Tracing
 - `info`: JWT refreshed (include remaining TTL, clamp details).  
 - `warn`: 401 received, retrying with new JWT; deprecation notice when user supplies JWT manually.  
-- `debug`: 429 encountered, sleeping `{delay_ms}` before retry.
+- `warn`: 429 encountered, sleeping 2 seconds before retry.
 
 ## Test Contracts
 
@@ -45,7 +45,7 @@ The Snowpipe client must guarantee a valid JWT for every outbound HTTP request w
 - **Given** Snowflake mock returns 401 twice, **When** client sends request, **Then** it retries once, returns `Error::Auth`, and does not attempt additional retries.
 
 ### Integration Test: Back-off on 429
-- **Given** Snowflake mock returns 429 then 200, **When** client sends request, **Then** client sleeps between 1–3 seconds, retries, and returns 200.
+- **Given** Snowflake mock returns 429 then 200, **When** client sends request, **Then** client logs a warning, sleeps 2 seconds, retries, and returns 200.
 
 ### Unit Test: Deprecation Warning for User-Supplied JWT
 - **Given** config includes `user_supplied_jwt`, **When** client initializes, **Then** a deprecation warning is logged and automatic refresh is bypassed.

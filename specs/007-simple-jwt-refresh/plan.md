@@ -85,7 +85,7 @@ tests/
 3. **Testing Strategy**
    - Unit tests for clamping logic and warning emission.  
    - Unit tests ensuring refresh occurs when margin threshold reached.  
-   - Integration tests with `wiremock`: 401 success-after-retry, 401 failure-after-retry, 429 with randomized back-off.  
+   - Integration tests with `wiremock`: 401 success-after-retry, 401 failure-after-retry, 429 with fixed 2s back-off.  
    - Tests covering deprecation warning when integrator supplies JWT directly.
 
 4. **Quickstart Guidance**

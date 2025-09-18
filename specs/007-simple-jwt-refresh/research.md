@@ -21,7 +21,7 @@
 - **Decision**: On `401 Unauthorized`, log a warning, refresh the JWT, and retry exactly once. If the retry fails with `401`, return `Error::Auth`.  
   **Rationale**: Keeps retry policy simple and prevents infinite loops while surfacing credential problems promptly.
 
-- **Decision**: On `429 TOO MANY REQUESTS`, sleep a randomized 1–3 seconds before retrying the request with the current or newly refreshed JWT.  
+- **Decision**: On `429 TOO MANY REQUESTS`, log a warning, sleep exactly two seconds, and then retry the request with the current or newly refreshed JWT.  
   **Rationale**: Provides basic back pressure without overengineering concurrency controls for single-instance clients.
 
 ### Security & Credential Management
