@@ -1,6 +1,7 @@
 This repository follows GitHub's spec-kit workflows.
 
-- For every command, locate the matching prompt in `.github/prompts/*.prompt.md` and execute the instructions exactly as written.
+- if the user's prompt starts with `/`, the first word is a command.  i.e. `/$CMD $ARGS`.  other prompts that don't start with `/` are not commands. if the prompt starts with `/`, then the word that follows is the command.  e.g. `/specify` is trying to call the `specify` command.
+- For every command (a prompt that starts with `/`), locate the matching prompt in `.github/prompts/*.prompt.md` and execute the instructions exactly as written.
 - The library of commands is defined by the files present in `.github/prompts/`; review that directory to understand the supported surface area.
 - If a command arrives without a corresponding prompt file, stop and flag it as unknown rather than improvising a response.
 - When a prompt is found, adhere to it precisely (variable substitutions, ordering, formatting, etc.).
