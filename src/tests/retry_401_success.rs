@@ -1,5 +1,5 @@
-use crate::tests::test_support::{base_config, capture_logs, drain_logs};
 use crate::StreamingIngestClient;
+use crate::tests::test_support::{base_config, capture_logs, drain_logs};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use wiremock::matchers::{method, path};

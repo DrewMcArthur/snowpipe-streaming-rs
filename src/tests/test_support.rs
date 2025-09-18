@@ -1,7 +1,7 @@
 use crate::Config;
 use std::sync::{Arc, Mutex};
-use tracing::subscriber::{set_default, DefaultGuard};
-use tracing_subscriber::{fmt, layer::SubscriberExt, Registry};
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::{Registry, fmt, layer::SubscriberExt};
 
 pub const FIXTURE_PRIVATE_KEY: &str = include_str!("../../tests/fixtures/id_rsa.pem");
 

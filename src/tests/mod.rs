@@ -1,8 +1,8 @@
+pub(crate) mod jwt;
 pub(crate) mod retry_401_failure;
 pub(crate) mod retry_401_success;
 pub(crate) mod retry_429_backoff;
 pub(crate) mod test_support;
-pub(crate) mod jwt;
 
 use jiff::Zoned;
 
