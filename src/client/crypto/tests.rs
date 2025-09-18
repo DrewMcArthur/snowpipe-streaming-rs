@@ -1,5 +1,4 @@
 // tests/generate_assertion_tests.rs
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use base64::engine::general_purpose::{self, STANDARD, URL_SAFE_NO_PAD};
@@ -14,13 +13,6 @@ use crate::{Config, Error};
 
 fn generate_assertion(cfg: &Config) -> Result<String, Error> {
     Ok(build_assertion(cfg, true)?.token)
-}
-
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
 }
 
 fn decode_jwt_payload(jwt: &str) -> Value {
@@ -68,7 +60,7 @@ fn generates_snowflake_style_jwt_claims() {
         retry_on_unauthorized: None,
     };
 
-    let t0 = now_secs();
+    let t0 = super::now_secs().unwrap();
 
     // Act
     let jwt = generate_assertion(&cfg).expect("should generate a JWT");
@@ -128,7 +120,7 @@ fn generates_snowflake_style_jwt_claims() {
     );
 
     // iat should be close to now (allow generous skew for CI)
-    let t1 = now_secs();
+    let t1 = super::now_secs().unwrap();
     assert!(
         iat >= t0.saturating_sub(30) && iat <= t1.saturating_add(30),
         "iat should be near 'now' (±30s); got {}, window [{}, {}]",
@@ -235,7 +227,7 @@ fn refreshes_token_when_near_expiry() {
     let first = ctx.ensure_valid(&cfg).expect("first token");
 
     // Simulate time passage so remaining TTL drops below margin.
-    ctx.force_issued_at(now_secs().saturating_sub(40));
+    ctx.force_issued_at(super::now_secs().unwrap().saturating_sub(40));
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     let (logs, second) = with_captured_logs(|| ctx.ensure_valid(&cfg).expect("refresh token"));

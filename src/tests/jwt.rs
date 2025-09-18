@@ -1,4 +1,4 @@
-use crate::tests::test_support::{capture_logs, drain_logs};
+use crate::tests::test_support::{base_config, capture_logs, drain_logs};
 use crate::{Config, StreamingIngestClient};
 use base64::Engine;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
@@ -101,18 +101,9 @@ async fn logs_deprecation_when_jwt_provided() {
         id: u64,
     }
 
-    let cfg = Config::from_values(
-        "user",
-        None,
-        "acct",
-        server.uri(),
-        Some("user-supplied-jwt".into()),
-        None,
-        None,
-        None,
-        None,
-        Some(3600),
-    );
+    let mut cfg = base_config(&server.uri());
+    cfg.jwt_token = Some("user-supplied-jwt".into());
+    cfg.jwt_exp_secs = Some(3600);
 
     let client_res =
         StreamingIngestClient::<RowType>::new("client", "db", "schema", "pipe", cfg).await;

@@ -1,24 +1,7 @@
-use crate::tests::test_support::{capture_logs, drain_logs};
-use crate::{Config, Error, StreamingIngestClient};
+use crate::tests::test_support::{base_config, capture_logs, drain_logs};
+use crate::{Error, StreamingIngestClient};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
-
-const PRIVATE_KEY: &str = include_str!("../../tests/fixtures/id_rsa.pem");
-
-fn config(server: &MockServer) -> Config {
-    Config::from_values(
-        "user",
-        None,
-        "acct",
-        server.uri(),
-        None,
-        Some(PRIVATE_KEY.to_string()),
-        None,
-        None,
-        None,
-        Some(120),
-    )
-}
 
 #[tokio::test]
 async fn returns_auth_error_after_double_401() {
@@ -35,8 +18,14 @@ async fn returns_auth_error_after_double_401() {
     #[derive(serde::Serialize, Clone)]
     struct Row;
 
-    let res =
-        StreamingIngestClient::<Row>::new("client", "db", "schema", "pipe", config(&server)).await;
+    let res = StreamingIngestClient::<Row>::new(
+        "client",
+        "db",
+        "schema",
+        "pipe",
+        base_config(&server.uri()),
+    )
+    .await;
     drop(guard);
 
     match res {

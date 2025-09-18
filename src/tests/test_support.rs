@@ -1,6 +1,24 @@
+use crate::Config;
 use std::sync::{Arc, Mutex};
-use tracing::subscriber::{DefaultGuard, set_default};
-use tracing_subscriber::{Registry, fmt, layer::SubscriberExt};
+use tracing::subscriber::{set_default, DefaultGuard};
+use tracing_subscriber::{fmt, layer::SubscriberExt, Registry};
+
+pub const FIXTURE_PRIVATE_KEY: &str = include_str!("../../tests/fixtures/id_rsa.pem");
+
+pub fn base_config(server_uri: &str) -> Config {
+    Config::from_values(
+        "user",
+        None,
+        "acct",
+        server_uri,
+        None,
+        Some(FIXTURE_PRIVATE_KEY.to_string()),
+        None,
+        None,
+        None,
+        Some(120),
+    )
+}
 
 struct VecWriter {
     lines: Arc<Mutex<Vec<String>>>,

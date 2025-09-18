@@ -1,26 +1,9 @@
-use crate::tests::test_support::{capture_logs, drain_logs};
-use crate::{Config, StreamingIngestClient};
+use crate::tests::test_support::{base_config, capture_logs, drain_logs};
+use crate::StreamingIngestClient;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
-
-const PRIVATE_KEY: &str = include_str!("../../tests/fixtures/id_rsa.pem");
-
-fn config(server: &MockServer) -> Config {
-    Config::from_values(
-        "user",
-        None,
-        "acct",
-        server.uri(),
-        None,
-        Some(PRIVATE_KEY.to_string()),
-        None,
-        None,
-        None,
-        Some(120),
-    )
-}
 
 #[tokio::test]
 async fn retries_once_after_401_then_succeeds() {
@@ -65,8 +48,14 @@ async fn retries_once_after_401_then_succeeds() {
     struct Row;
 
     let (lines, guard) = capture_logs();
-    let res =
-        StreamingIngestClient::<Row>::new("client", "db", "schema", "pipe", config(&server)).await;
+    let res = StreamingIngestClient::<Row>::new(
+        "client",
+        "db",
+        "schema",
+        "pipe",
+        base_config(&server.uri()),
+    )
+    .await;
     drop(guard);
 
     res.expect("client creation should succeed after retry");

@@ -1,44 +1,32 @@
-use crate::tests::test_support::{capture_logs, drain_logs};
-use crate::{Config, StreamingIngestClient};
+use crate::StreamingIngestClient;
+use crate::tests::test_support::{base_config, capture_logs, drain_logs};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
-
-const PRIVATE_KEY: &str = include_str!("../../tests/fixtures/id_rsa.pem");
-
-fn config(server: &MockServer) -> Config {
-    Config::from_values(
-        "user",
-        None,
-        "acct",
-        server.uri(),
-        None,
-        Some(PRIVATE_KEY.to_string()),
-        None,
-        None,
-        None,
-        Some(120),
-    )
-}
+use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 #[tokio::test]
 async fn waits_two_seconds_before_retrying_429() {
     tokio::time::pause();
 
     let server = MockServer::start().await;
+    let success_body = server.uri();
+    let first_call = Arc::new(Mutex::new(true));
+    let first_call_clone = first_call.clone();
 
     Mock::given(method("GET"))
         .and(path("/v2/streaming/hostname"))
-        .respond_with(ResponseTemplate::new(429))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    Mock::given(method("GET"))
-        .and(path("/v2/streaming/hostname"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(server.uri()))
-        .expect(1)
+        .respond_with(move |_req: &Request| {
+            let mut first_call = first_call_clone.lock().unwrap();
+            if *first_call {
+                *first_call = false;
+                ResponseTemplate::new(429)
+            } else {
+                ResponseTemplate::new(200).set_body_string(success_body.clone())
+            }
+        })
+        .expect(2)
         .mount(&server)
         .await;
 
@@ -54,9 +42,16 @@ async fn waits_two_seconds_before_retrying_429() {
 
     let (lines, guard) = capture_logs();
 
-    let handle: JoinHandle<_> = tokio::spawn({
-        let cfg = config(&server);
-        async move { StreamingIngestClient::<Row>::new("client", "db", "schema", "pipe", cfg).await }
+    let server_uri = server.uri();
+    let handle: JoinHandle<_> = tokio::spawn(async move {
+        StreamingIngestClient::<Row>::new(
+            "client",
+            "db",
+            "schema",
+            "pipe",
+            base_config(&server_uri),
+        )
+        .await
     });
 
     tokio::task::yield_now().await;
