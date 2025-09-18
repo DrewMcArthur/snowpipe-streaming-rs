@@ -1,3 +1,5 @@
+use crate::tests::test_support::{capture_logs, drain_logs};
+use crate::{Config, StreamingIngestClient};
 use base64::Engine;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use pem::parse;
@@ -5,31 +7,10 @@ use pkcs8::{DecodePrivateKey, EncodePrivateKey};
 use rand::thread_rng;
 use rsa::RsaPrivateKey;
 use rsa::pkcs1::EncodeRsaPrivateKey;
-use snowpipe_streaming::{Config, StreamingIngestClient};
-use std::sync::{Arc, Mutex};
-use tracing::subscriber::set_default;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::{Registry, fmt};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const PASSPHRASE: &str = "test-pass";
-
-struct VecWriter {
-    lines: Arc<Mutex<Vec<String>>>,
-}
-
-impl std::io::Write for VecWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let mut guard = self.lines.lock().unwrap();
-        guard.push(String::from_utf8_lossy(buf).into_owned());
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
 
 fn to_pem(body: &str) -> String {
     let mut out = String::with_capacity(body.len() + body.len() / 64 + 64);
@@ -113,18 +94,7 @@ async fn logs_deprecation_when_jwt_provided() {
         .mount(&server)
         .await;
 
-    let lines = Arc::new(Mutex::new(Vec::new()));
-    let writer_lines = lines.clone();
-    let subscriber = Registry::default().with(
-        fmt::Layer::default()
-            .with_writer(move || VecWriter {
-                lines: writer_lines.clone(),
-            })
-            .with_target(false)
-            .with_level(true)
-            .with_ansi(false),
-    );
-    let guard = set_default(subscriber);
+    let (lines, guard) = capture_logs();
 
     #[derive(serde::Serialize, Clone)]
     struct RowType {
@@ -150,7 +120,7 @@ async fn logs_deprecation_when_jwt_provided() {
     drop(guard);
     client_res.expect("client construction should succeed");
 
-    let logs = Arc::try_unwrap(lines).unwrap().into_inner().unwrap();
+    let logs = drain_logs(lines);
     assert!(
         logs.iter()
             .any(|line| line.contains("WARN") && line.to_lowercase().contains("deprecated")),

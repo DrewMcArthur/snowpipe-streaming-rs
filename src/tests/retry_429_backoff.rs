@@ -1,46 +1,11 @@
-use snowpipe_streaming::{Config, StreamingIngestClient};
-use std::sync::{Arc, Mutex};
+use crate::tests::test_support::{capture_logs, drain_logs};
+use crate::{Config, StreamingIngestClient};
 use std::time::Duration;
 use tokio::task::JoinHandle;
-use tracing::subscriber::{DefaultGuard, set_default};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::{Registry, fmt};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const PRIVATE_KEY: &str = include_str!("fixtures/id_rsa.pem");
-
-struct VecWriter {
-    lines: Arc<Mutex<Vec<String>>>,
-}
-
-impl std::io::Write for VecWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let mut guard = self.lines.lock().unwrap();
-        guard.push(String::from_utf8_lossy(buf).into_owned());
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-fn capture_logs() -> (Arc<Mutex<Vec<String>>>, DefaultGuard) {
-    let lines = Arc::new(Mutex::new(Vec::new()));
-    let writer_lines = lines.clone();
-    let subscriber = Registry::default().with(
-        fmt::Layer::default()
-            .with_writer(move || VecWriter {
-                lines: writer_lines.clone(),
-            })
-            .with_target(false)
-            .with_level(true)
-            .with_ansi(false),
-    );
-    let guard = set_default(subscriber);
-    (lines, guard)
-}
+const PRIVATE_KEY: &str = include_str!("../../tests/fixtures/id_rsa.pem");
 
 fn config(server: &MockServer) -> Config {
     Config::from_values(
@@ -108,7 +73,7 @@ async fn waits_two_seconds_before_retrying_429() {
 
     res.expect("client construction should succeed after retry");
 
-    let logs = lines.lock().unwrap().clone();
+    let logs = drain_logs(lines);
     assert!(
         logs.iter()
             .any(|line| line.contains("WARN") && line.contains("429")),

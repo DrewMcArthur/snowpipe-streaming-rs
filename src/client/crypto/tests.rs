@@ -8,47 +8,12 @@ use rand::thread_rng;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use serde_json::Value;
 
-use crate::Config;
-use crate::client::crypto::{JwtContext, compute_fingerprint, generate_assertion};
-use std::sync::{Arc, Mutex};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::{Registry, fmt};
+use crate::client::crypto::{JwtContext, build_assertion, compute_fingerprint};
+use crate::tests::test_support::with_captured_logs;
+use crate::{Config, Error};
 
-struct VecWriter {
-    lines: Arc<Mutex<Vec<String>>>,
-}
-
-impl std::io::Write for VecWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let mut guard = self.lines.lock().unwrap();
-        guard.push(String::from_utf8_lossy(buf).into_owned());
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-fn with_captured_logs<F, T>(f: F) -> (Vec<String>, T)
-where
-    F: FnOnce() -> T,
-{
-    let lines = Arc::new(Mutex::new(Vec::new()));
-    let writer_lines = lines.clone();
-    let subscriber = Registry::default().with(
-        fmt::Layer::default()
-            .with_writer(move || VecWriter {
-                lines: writer_lines.clone(),
-            })
-            .with_target(false)
-            .with_level(true)
-            .with_ansi(false),
-    );
-
-    let result = tracing::subscriber::with_default(subscriber, f);
-    let logs = Arc::try_unwrap(lines).unwrap().into_inner().unwrap();
-    (logs, result)
+fn generate_assertion(cfg: &Config) -> Result<String, Error> {
+    Ok(build_assertion(cfg, true)?.token)
 }
 
 fn now_secs() -> u64 {

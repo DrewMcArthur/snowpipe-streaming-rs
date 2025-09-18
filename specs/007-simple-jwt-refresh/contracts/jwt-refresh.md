@@ -12,7 +12,7 @@ The Snowpipe client must guarantee a valid JWT for every outbound HTTP request w
 - **Behavior**:
   1. Read `JwtContext`. If token missing or `remaining_ttl <= refresh_margin`, lock the context for refresh.  
   2. Clamp configured expiration into `[30, 3600]`; log warning if clamping performed.  
-  3. Generate new JWT via `crypto::generate_assertion` and update context metadata.  
+  3. Generate new JWT via the crypto helper (`build_assertion`) and update context metadata.  
   4. Return cached token for reuse until next margin check.
 - **Errors**: `Error::Config` (invalid configuration after clamping), `Error::JwtSign`, `Error::Auth` (refresh failed).
 

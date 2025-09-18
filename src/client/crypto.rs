@@ -85,7 +85,7 @@ fn load_rsa_private_key_from_pem(
     ))
 }
 
-struct AssertionBundle {
+pub(super) struct AssertionBundle {
     token: String,
     issued_at: u64,
     expires_at: u64,
@@ -93,7 +93,7 @@ struct AssertionBundle {
     clamped_from: Option<u64>,
 }
 
-fn build_assertion(cfg: &Config, log_clamp: bool) -> Result<AssertionBundle, Error> {
+pub(super) fn build_assertion(cfg: &Config, log_clamp: bool) -> Result<AssertionBundle, Error> {
     let private_key = cfg.private_key()?;
     let prefix = "TEST://assertion:";
     let now = now_secs()?;
@@ -161,10 +161,6 @@ fn build_assertion(cfg: &Config, log_clamp: bool) -> Result<AssertionBundle, Err
         lifetime_secs,
         clamped_from,
     })
-}
-
-pub(super) fn generate_assertion(cfg: &Config) -> Result<String, Error> {
-    Ok(build_assertion(cfg, true)?.token)
 }
 
 pub(crate) struct JwtContext {
