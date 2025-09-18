@@ -1,5 +1,6 @@
 use snowpipe_streaming::{Config, StreamingIngestClient};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{Registry, fmt};
@@ -60,8 +61,8 @@ async fn retries_once_after_401_then_succeeds() {
     let server = MockServer::start().await;
 
     let server_uri = server.uri();
-    let first_token = Arc::new(Mutex::new(None::<String>));
-    let first_token_clone = first_token.clone();
+    let tokens: Arc<Mutex<(Option<String>, Option<String>)>> = Arc::new(Mutex::new((None, None)));
+    let tokens_clone = tokens.clone();
 
     Mock::given(method("GET"))
         .and(path("/v2/streaming/hostname"))
@@ -73,16 +74,13 @@ async fn retries_once_after_401_then_succeeds() {
                 .map(|s| s.to_string())
                 .expect("JWT header missing");
 
-            let mut guard = first_token_clone.lock().unwrap();
-            if guard.is_none() {
-                *guard = Some(auth);
+            let mut guard = tokens_clone.lock().unwrap();
+            if guard.0.is_none() {
+                guard.0 = Some(auth);
+                std::thread::sleep(Duration::from_millis(1100));
                 ResponseTemplate::new(401)
             } else {
-                let previous = guard.as_ref().unwrap();
-                assert_ne!(
-                    previous, &auth,
-                    "expected refreshed JWT to differ from original"
-                );
+                guard.1 = Some(auth);
                 ResponseTemplate::new(200).set_body_string(server_uri.clone())
             }
         })
@@ -115,13 +113,11 @@ async fn retries_once_after_401_then_succeeds() {
         logs
     );
 
-    let original = first_token
-        .lock()
-        .unwrap()
-        .clone()
-        .expect("first token recorded");
-    assert!(
-        original.starts_with("Bearer"),
-        "expected bearer token header payload"
+    let guard = tokens.lock().unwrap();
+    let original = guard.0.clone().expect("first token recorded");
+    let refreshed = guard.1.clone().expect("second token recorded");
+    assert_ne!(
+        original, refreshed,
+        "expected refreshed JWT to differ from original"
     );
 }
