@@ -218,8 +218,8 @@ fn clamps_short_expiry_and_warns_once() {
     );
 }
 
-#[test]
-fn refreshes_token_when_near_expiry() {
+#[tokio::test]
+async fn refreshes_token_when_near_expiry() {
     let cfg = config_with_exp_secs(60);
     let mut ctx = JwtContext::new(&cfg, 30).expect("context");
 
@@ -228,7 +228,7 @@ fn refreshes_token_when_near_expiry() {
 
     // Simulate time passage so remaining TTL drops below margin.
     ctx.force_issued_at(super::now_secs().unwrap().saturating_sub(40));
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     let (logs, second) = with_captured_logs(|| ctx.ensure_valid(&cfg).expect("refresh token"));
 

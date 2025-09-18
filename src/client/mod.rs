@@ -7,7 +7,7 @@ use crate::client::crypto::JwtContext;
 use reqwest::Client;
 use std::time::Duration;
 
-mod crypto;
+pub(crate) mod crypto;
 mod impls;
 
 #[derive(Clone)]

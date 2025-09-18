@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use serde::Serialize;
 use tracing::{error, info, warn};
 
@@ -99,10 +100,10 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             return Err(Error::DataTooLarge(data.len(), MAX_REQUEST_SIZE));
         }
 
+        let data_len = data.len();
         info!(
             "append rows: channel='{}' bytes={}",
-            self.channel_name,
-            data.len()
+            self.channel_name, data_len
         );
         let offset = self.last_pushed_offset_token + 1;
         let ingest = self
@@ -126,15 +127,16 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             offset
         );
 
+        let payload = Bytes::from(data);
         let response = self
             .client
-            .send_with_scoped_token(|client, scoped| {
+            .send_with_scoped_token(move |client, scoped| {
                 client
                     .post(&url)
                     .header("Authorization", format!("Bearer {}", scoped))
                     .header("Content-Type", "application/json")
                     .header("User-Agent", USER_AGENT)
-                    .body(data.clone())
+                    .body(payload.clone())
             })
             .await?;
 

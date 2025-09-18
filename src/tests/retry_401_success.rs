@@ -1,7 +1,6 @@
 use crate::StreamingIngestClient;
 use crate::tests::test_support::{base_config, capture_logs, drain_logs};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
@@ -24,9 +23,8 @@ async fn retries_once_after_401_then_succeeds() {
                 .expect("JWT header missing");
 
             let mut guard = tokens_clone.lock().unwrap();
-            if guard.0.is_none() {
+            if guard.0.is_none() || guard.0.as_ref() == Some(&auth) {
                 guard.0 = Some(auth);
-                std::thread::sleep(Duration::from_millis(1100));
                 ResponseTemplate::new(401)
             } else {
                 guard.1 = Some(auth);

@@ -192,6 +192,7 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
                     warn!("received 401 from Snowflake; refreshing JWT and retrying");
                     self.invalidate_jwt().await;
                     unauthorized_retry = true;
+                    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
                     continue;
                 }
                 warn!("received 401 from Snowflake after retry; surfacing authentication failure");

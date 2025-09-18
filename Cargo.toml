@@ -14,6 +14,7 @@ serde = "1.0.219"
 serde_json = "1.0.143"
 tokio = { version = "1.47.1", features = ["macros", "rt", "time", "test-util"] }
 tracing = { version = "0.1.41" }
+bytes = "1.8.0"
 jsonwebtoken = { version = "9.3.0" }
 pem = "3.0.4"
 uuid = { version = "1.10.0", features = ["v4"] }
