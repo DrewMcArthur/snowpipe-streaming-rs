@@ -14,6 +14,7 @@ pub enum Error {
     Key(String),
     JwtSign(String),
     Utf8Error(std::string::FromUtf8Error),
+    Auth(String),
 }
 
 impl From<std::io::Error> for Error {
@@ -85,6 +86,7 @@ impl std::fmt::Display for Error {
             Error::Timeout(d) => write!(f, "Operation timed out after {:?}", d),
             Error::Key(msg) => write!(f, "Key error: {}", msg),
             Error::JwtSign(msg) => write!(f, "JWT signing error: {}", msg),
+            Error::Auth(msg) => write!(f, "Authentication failed: {}", msg),
         }
     }
 }

@@ -1,4 +1,3 @@
-use reqwest::Client;
 use serde::Serialize;
 use tracing::{error, info, warn};
 
@@ -8,6 +7,7 @@ use crate::{
 };
 
 const MAX_REQUEST_SIZE: usize = 16 * 1024 * 1024; // 16MB
+const USER_AGENT: &str = "snowpipe-streaming-rust-sdk/0.1.0";
 
 pub struct StreamingIngestChannel<R> {
     _marker: std::marker::PhantomData<R>,
@@ -126,24 +126,19 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             offset
         );
 
-        let client = Client::new();
-        let resp = client
-            .post(&url)
-            .header(
-                "Authorization",
-                format!(
-                    "Bearer {}",
-                    self.client
-                        .scoped_token
-                        .as_ref()
-                        .expect("scoped token not set")
-                ),
-            )
-            .header("Content-Type", "application/json")
-            .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
-            .body(data)
-            .send()
-            .await?
+        let response = self
+            .client
+            .send_with_scoped_token(|client, scoped| {
+                client
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", scoped))
+                    .header("Content-Type", "application/json")
+                    .header("User-Agent", USER_AGENT)
+                    .body(data.clone())
+            })
+            .await?;
+
+        let resp = response
             .error_for_status()?
             .json::<AppendRowsResponse>()
             .await?;
@@ -165,7 +160,6 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
     }
 
     async fn get_channel_status(&mut self) -> Result<(), Error> {
-        let client = Client::new();
         let ingest = self
             .client
             .ingest_host
@@ -181,26 +175,21 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             base, self.client.db_name, self.client.schema_name, self.client.pipe_name,
         );
 
-        let resp = client
-            .post(&url)
-            .header(
-                "Authorization",
-                format!(
-                    "Bearer {}",
-                    self.client
-                        .scoped_token
-                        .as_ref()
-                        .expect("scoped token not set")
-                ),
-            )
-            .header("Content-Type", "application/json")
-            .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
-            .body(format!(
-                "{{\"channel_names\": [\"{}\"]}}",
-                self.channel_name
-            ))
-            .send()
-            .await?
+        let body = format!("{{\"channel_names\": [\"{}\"]}}", self.channel_name);
+
+        let response = self
+            .client
+            .send_with_scoped_token(|client, scoped| {
+                client
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", scoped))
+                    .header("Content-Type", "application/json")
+                    .header("User-Agent", USER_AGENT)
+                    .body(body.clone())
+            })
+            .await?;
+
+        let resp = response
             .error_for_status()?
             .json::<serde_json::Value>()
             .await?;
@@ -216,13 +205,18 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
                     "channel status: committed={:?}",
                     status.last_committed_offset_token
                 );
-                self.last_committed_offset_token = status.last_committed_offset_token .clone()
-            .unwrap_or("0".to_string())
-            .parse()
-            .unwrap_or_else(|_| panic!(
-                "Failed to parse last_committed_offset_token while getting channel status {:?}",
-                status.last_committed_offset_token
-            ));
+                self.last_committed_offset_token = status
+                    .last_committed_offset_token
+                    .clone()
+                    .unwrap_or_else(|| "0".to_string())
+                    .parse()
+                    .unwrap_or_else(|_| {
+                        // todo: don't panic, return this error
+                        panic!(
+                            "Failed to parse last_committed_offset_token while getting channel status {:?}",
+                            status.last_committed_offset_token
+                        )
+                    });
             }
             s => {
                 error!("channel status parse failed: {:?}", s);
@@ -289,22 +283,14 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
             self.channel_name
         );
 
-        let client = Client::new();
-        client
-            .delete(&url)
-            .header(
-                "Authorization",
-                format!(
-                    "Bearer {}",
-                    self.client
-                        .scoped_token
-                        .as_ref()
-                        .expect("scoped token not set")
-                ),
-            )
-            .header("Content-Type", "application/json")
-            .header("User-Agent", "snowpipe-streaming-rust-sdk/0.1.0")
-            .send()
+        self.client
+            .send_with_scoped_token(|client, scoped| {
+                client
+                    .delete(&url)
+                    .header("Authorization", format!("Bearer {}", scoped))
+                    .header("Content-Type", "application/json")
+                    .header("User-Agent", USER_AGENT)
+            })
             .await?
             .error_for_status()?;
 

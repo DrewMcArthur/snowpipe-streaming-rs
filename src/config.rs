@@ -16,6 +16,8 @@ pub struct Config {
     pub private_key_passphrase: Option<String>,
     pub public_key_fp: Option<String>,
     pub jwt_exp_secs: Option<u64>,
+    pub jwt_refresh_margin_secs: Option<u64>,
+    pub retry_on_unauthorized: Option<bool>,
 }
 
 impl Config {
@@ -43,6 +45,8 @@ impl Config {
             private_key_passphrase,
             public_key_fp,
             jwt_exp_secs,
+            jwt_refresh_margin_secs: None,
+            retry_on_unauthorized: None,
         }
     }
 
@@ -97,6 +101,12 @@ fn read_config_from_env() -> Result<Config, Error> {
             .ok()
             .and_then(|s| s.parse::<u64>().ok()),
         jwt_token: std::env::var("SNOWFLAKE_JWT_TOKEN").ok(),
+        jwt_refresh_margin_secs: std::env::var("SNOWFLAKE_JWT_REFRESH_MARGIN_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok()),
+        retry_on_unauthorized: std::env::var("SNOWFLAKE_RETRY_ON_UNAUTHORIZED")
+            .ok()
+            .and_then(|s| s.parse::<bool>().ok()),
     })
 }
 

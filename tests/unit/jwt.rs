@@ -5,9 +5,31 @@ use pkcs8::{DecodePrivateKey, EncodePrivateKey};
 use rand::thread_rng;
 use rsa::RsaPrivateKey;
 use rsa::pkcs1::EncodeRsaPrivateKey;
-use snowpipe_streaming::Config;
+use snowpipe_streaming::{Config, StreamingIngestClient};
+use std::sync::{Arc, Mutex};
+use tracing::subscriber::set_default;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::{Registry, fmt};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const PASSPHRASE: &str = "test-pass";
+
+struct VecWriter {
+    lines: Arc<Mutex<Vec<String>>>,
+}
+
+impl std::io::Write for VecWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut guard = self.lines.lock().unwrap();
+        guard.push(String::from_utf8_lossy(buf).into_owned());
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 fn to_pem(body: &str) -> String {
     let mut out = String::with_capacity(body.len() + body.len() / 64 + 64);
@@ -73,4 +95,66 @@ fn encrypted_pkcs8_decrypts_to_encoding_key() {
     };
 
     jsonwebtoken::encode(&header, &claims, &encoding_key).expect("signing should succeed");
+}
+
+#[tokio::test]
+async fn logs_deprecation_when_jwt_provided() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/v2/streaming/hostname"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(server.uri()))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("scoped-token"))
+        .mount(&server)
+        .await;
+
+    let lines = Arc::new(Mutex::new(Vec::new()));
+    let writer_lines = lines.clone();
+    let subscriber = Registry::default().with(
+        fmt::Layer::default()
+            .with_writer(move || VecWriter {
+                lines: writer_lines.clone(),
+            })
+            .with_target(false)
+            .with_level(true)
+            .with_ansi(false),
+    );
+    let guard = set_default(subscriber);
+
+    #[derive(serde::Serialize, Clone)]
+    struct RowType {
+        id: u64,
+    }
+
+    let cfg = Config::from_values(
+        "user",
+        None,
+        "acct",
+        server.uri(),
+        Some("user-supplied-jwt".into()),
+        None,
+        None,
+        None,
+        None,
+        Some(3600),
+    );
+
+    let client_res =
+        StreamingIngestClient::<RowType>::new("client", "db", "schema", "pipe", cfg).await;
+
+    drop(guard);
+    client_res.expect("client construction should succeed");
+
+    let logs = Arc::try_unwrap(lines).unwrap().into_inner().unwrap();
+    assert!(
+        logs.iter()
+            .any(|line| line.contains("WARN") && line.to_lowercase().contains("deprecated")),
+        "expected deprecation warning when jwt_token supplied, got {:?}",
+        logs
+    );
 }

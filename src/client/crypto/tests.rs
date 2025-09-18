@@ -9,7 +9,47 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use serde_json::Value;
 
 use crate::Config;
-use crate::client::crypto::{compute_fingerprint, generate_assertion};
+use crate::client::crypto::{JwtContext, compute_fingerprint, generate_assertion};
+use std::sync::{Arc, Mutex};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::{Registry, fmt};
+
+struct VecWriter {
+    lines: Arc<Mutex<Vec<String>>>,
+}
+
+impl std::io::Write for VecWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut guard = self.lines.lock().unwrap();
+        guard.push(String::from_utf8_lossy(buf).into_owned());
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn with_captured_logs<F, T>(f: F) -> (Vec<String>, T)
+where
+    F: FnOnce() -> T,
+{
+    let lines = Arc::new(Mutex::new(Vec::new()));
+    let writer_lines = lines.clone();
+    let subscriber = Registry::default().with(
+        fmt::Layer::default()
+            .with_writer(move || VecWriter {
+                lines: writer_lines.clone(),
+            })
+            .with_target(false)
+            .with_level(true)
+            .with_ansi(false),
+    );
+
+    let result = tracing::subscriber::with_default(subscriber, f);
+    let logs = Arc::try_unwrap(lines).unwrap().into_inner().unwrap();
+    (logs, result)
+}
 
 fn now_secs() -> u64 {
     SystemTime::now()
@@ -59,6 +99,8 @@ fn generates_snowflake_style_jwt_claims() {
         private_key_passphrase: None,
         public_key_fp: None,
         jwt_exp_secs: Some(exp_secs),
+        jwt_refresh_margin_secs: None,
+        retry_on_unauthorized: None,
     };
 
     let t0 = now_secs();
@@ -176,4 +218,71 @@ fn correctly_generates_fingerprint() {
     let pubkey = RsaPublicKey::from_public_key_der(&der).unwrap();
     let fp = "SHA256:xZx8qqibbh7x0CTGVPZNf3z463BMMn7vIoIxSUJQ/Bc=";
     assert_eq!(compute_fingerprint(&pubkey).unwrap(), fp);
+}
+
+fn config_with_exp_secs(exp: u64) -> Config {
+    Config {
+        user: "user".into(),
+        login: None,
+        account: "acct".into(),
+        url: "https://example".into(),
+        jwt_token: None,
+        private_key: Some(TEST_PKCS8_PRIVKEY_PEM.to_string()),
+        private_key_path: None,
+        private_key_passphrase: None,
+        public_key_fp: None,
+        jwt_exp_secs: Some(exp),
+        jwt_refresh_margin_secs: None,
+        retry_on_unauthorized: None,
+    }
+}
+
+#[test]
+fn clamps_short_expiry_and_warns_once() {
+    let cfg = config_with_exp_secs(10);
+
+    let (logs, jwt) = with_captured_logs(|| generate_assertion(&cfg).expect("jwt"));
+
+    let payload = decode_jwt_payload(&jwt);
+    let iat = payload.get("iat").and_then(|v| v.as_u64()).unwrap();
+    let exp = payload.get("exp").and_then(|v| v.as_u64()).unwrap();
+
+    assert_eq!(exp - iat, 30, "short lifetimes should clamp to 30 seconds");
+
+    let warn_logs: Vec<&String> = logs
+        .iter()
+        .filter(|line| line.contains("WARN") && line.to_lowercase().contains("clamp"))
+        .collect();
+    assert_eq!(
+        warn_logs.len(),
+        1,
+        "expected a single clamp warning, got: {:?}",
+        warn_logs
+    );
+}
+
+#[test]
+fn refreshes_token_when_near_expiry() {
+    let cfg = config_with_exp_secs(60);
+    let mut ctx = JwtContext::new(&cfg, 30).expect("context");
+
+    // First call should produce a token we can reuse until margin threshold hit.
+    let first = ctx.ensure_valid(&cfg).expect("first token");
+
+    // Simulate time passage so remaining TTL drops below margin.
+    ctx.force_issued_at(now_secs().saturating_sub(40));
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    let (logs, second) = with_captured_logs(|| ctx.ensure_valid(&cfg).expect("refresh token"));
+
+    assert_ne!(
+        first, second,
+        "token should refresh once below safety margin"
+    );
+    assert!(
+        logs.iter()
+            .any(|line| line.contains("INFO") && line.to_lowercase().contains("refresh")),
+        "refresh should emit informative log; got {:?}",
+        logs
+    );
 }

@@ -27,7 +27,7 @@ mod tests {
             dt: Zoned,
         }
 
-        let client = StreamingIngestClient::<RowType>::new(
+        let mut client = StreamingIngestClient::<RowType>::new(
             "my_client",
             "my_db",
             "my_schema",

@@ -60,7 +60,8 @@ async fn discovery_and_token_flow() {
     .expect("client new failed");
 
     assert_eq!(client.ingest_host.as_deref(), Some(server.uri().as_str()));
-    assert_eq!(client.scoped_token.as_deref(), Some("scoped-token"));
+    let scoped = client.scoped_token.lock().await.clone();
+    assert_eq!(scoped.as_deref(), Some("scoped-token"));
 }
 
 // Removed legacy tests that hit non-existent /oauth2/token; client must not call it.
@@ -131,7 +132,7 @@ async fn open_append_status_close_flow() {
     fs::create_dir_all("target").ok();
     fs::write(&cfg_path, serde_json::to_string(&cfg).unwrap()).unwrap();
 
-    let client = StreamingIngestClient::<RowType>::new(
+    let mut client = StreamingIngestClient::<RowType>::new(
         "test-client",
         "db",
         "schema",
@@ -237,7 +238,7 @@ async fn batched_append_rows_triggers_multiple_posts() {
     fs::create_dir_all("target").ok();
     fs::write(&cfg_path, serde_json::to_string(&cfg).unwrap()).unwrap();
 
-    let client = StreamingIngestClient::<RowType>::new(
+    let mut client = StreamingIngestClient::<RowType>::new(
         "test-client",
         "db",
         "schema",
@@ -323,7 +324,7 @@ async fn append_rows_error_is_mapped() {
     fs::create_dir_all("target").ok();
     fs::write(&cfg_path, serde_json::to_string(&cfg).unwrap()).unwrap();
 
-    let client = StreamingIngestClient::<RowType>::new(
+    let mut client = StreamingIngestClient::<RowType>::new(
         "test-client",
         "db",
         "schema",
@@ -387,7 +388,7 @@ async fn data_too_large_is_returned() {
     fs::create_dir_all("target").ok();
     fs::write(&cfg_path, serde_json::to_string(&cfg).unwrap()).unwrap();
 
-    let client = StreamingIngestClient::<RowType>::new(
+    let mut client = StreamingIngestClient::<RowType>::new(
         "test-client",
         "db",
         "schema",
@@ -485,7 +486,7 @@ async fn chunk_size_guard_two_large_rows_yield_two_posts() {
     fs::create_dir_all("target").ok();
     fs::write(&cfg_path, serde_json::to_string(&cfg).unwrap()).unwrap();
 
-    let client = StreamingIngestClient::<RowType>::new(
+    let mut client = StreamingIngestClient::<RowType>::new(
         "test-client",
         "db",
         "schema",

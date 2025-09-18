@@ -6,13 +6,15 @@
 
 ## Configure
 1. Provide private key material only; avoid supplying raw JWTs (deprecated).  
-2. Optional configuration in `config.toml`:
+2. Minimal configuration example (keep only the essentials):
    ```toml
-   jwt_exp_secs = 120   # will be clamped to [30, 3600] with a warning if outside range
-   jwt_refresh_margin_secs = 45
-   retry_on_unauthorized = true
+   user = "MY_USER"
+   account = "MY_ACCOUNT"
+   url = "https://my-account-host"
+   private_key_path = "/path/to/private_key.pem"
    ```
-3. Inspect logs on startup to confirm whether clamping occurred.
+3. Optional behaviors—such as custom JWT lifetimes, refresh margins, or retry overrides—can be added later via `jwt_exp_secs`, `jwt_refresh_margin_secs`, and `retry_on_unauthorized` if needed.  
+4. Inspect logs on startup to confirm whether clamping occurred.
 
 ## Run Example (after implementation)
 1. Build: `cargo build`.  
