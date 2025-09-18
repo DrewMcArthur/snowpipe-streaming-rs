@@ -4,6 +4,7 @@ use snowpipe_streaming::{Config, StreamingIngestClient};
 async fn invalid_control_host_url_fails_fast() {
     let cfg = Config::from_values(
         "user",
+        None,
         "acct",
         "://not-a-valid-url",
         Some("jwt".into()),
@@ -13,9 +14,10 @@ async fn invalid_control_host_url_fails_fast() {
         Some(60),
     );
 
-    let err = StreamingIngestClient::<()>::new("c", "db", "schema", "pipe", cfg)
-        .await
-        .expect_err("expected invalid URL error");
+    let err = match StreamingIngestClient::<()>::new("c", "db", "schema", "pipe", cfg).await {
+        Ok(_) => panic!("expected invalid URL error"),
+        Err(err) => err,
+    };
 
     match err {
         snowpipe_streaming::Error::Config(msg) => {
@@ -24,4 +26,3 @@ async fn invalid_control_host_url_fails_fast() {
         other => panic!("unexpected error: {:?}", other),
     }
 }
-
