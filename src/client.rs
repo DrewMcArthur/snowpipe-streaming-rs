@@ -297,9 +297,6 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
     pub fn close(&self) {}
 }
 
-// Legacy snowsql-based JWT generation was explored but not used; programmatic
-// OAuth2 control-plane token acquisition is implemented instead.
-
 #[cfg(test)]
 mod tests {
 
