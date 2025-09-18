@@ -15,6 +15,7 @@ pub enum Error {
     JwtSign(String),
     Utf8Error(std::string::FromUtf8Error),
     Auth(String),
+    UnexpectedResponse(String),
 }
 
 impl From<std::io::Error> for Error {
@@ -87,6 +88,7 @@ impl std::fmt::Display for Error {
             Error::Key(msg) => write!(f, "Key error: {}", msg),
             Error::JwtSign(msg) => write!(f, "JWT signing error: {}", msg),
             Error::Auth(msg) => write!(f, "Authentication failed: {}", msg),
+            Error::UnexpectedResponse(msg) => write!(f, "Unexpected response from server: {}", msg),
         }
     }
 }

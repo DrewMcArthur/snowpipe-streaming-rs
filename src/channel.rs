@@ -205,18 +205,25 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
                     "channel status: committed={:?}",
                     status.last_committed_offset_token
                 );
-                self.last_committed_offset_token = status
+                let token_str = status
                     .last_committed_offset_token
                     .clone()
-                    .unwrap_or_else(|| "0".to_string())
-                    .parse()
-                    .unwrap_or_else(|_| {
-                        // todo: don't panic, return this error
-                        panic!(
-                            "Failed to parse last_committed_offset_token while getting channel status {:?}",
-                            status.last_committed_offset_token
-                        )
-                    });
+                    .unwrap_or_else(|| "0".to_string());
+                match token_str.parse::<u64>() {
+                    Ok(value) => {
+                        self.last_committed_offset_token = value;
+                    }
+                    Err(err) => {
+                        error!(
+                            "Failed to parse last_committed_offset_token='{}': {}",
+                            token_str, err
+                        );
+                        return Err(Error::UnexpectedResponse(format!(
+                            "Invalid last_committed_offset_token '{}'",
+                            token_str
+                        )));
+                    }
+                }
             }
             s => {
                 error!("channel status parse failed: {:?}", s);
