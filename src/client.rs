@@ -2,32 +2,75 @@ use std::marker::PhantomData;
 
 use base64::Engine;
 use pkcs8::DecodePrivateKey;
-use pkcs8::der::Decode;
 use reqwest::Client;
-use rsa::pkcs1::{EncodeRsaPrivateKey, EncodeRsaPublicKey};
+use rsa::pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, EncodeRsaPublicKey};
 use serde::Serialize;
 use tracing::{error, info};
 
 use crate::{channel::StreamingIngestChannel, config::Config, errors::Error};
 
-/// returns base64 encoded fingerprint of a public key,
-/// given the bytes of the private key
-fn generate_fingerprint(private_key_bytes: &str) -> Result<String, Error> {
-    let key = rsa::RsaPrivateKey::from_pkcs8_pem(private_key_bytes)?;
+/// Returns base64 encoded fingerprint of a public key derived from the RSA key.
+fn compute_fingerprint(key: &rsa::RsaPrivateKey) -> Result<String, Error> {
     let public_key = key.to_public_key();
-
+    let pkcs1 = public_key
+        .to_pkcs1_der()
+        .map_err(|e| Error::Key(format!("PKCS#1 DER encode failed: {e}")))?;
     let fingerprint = {
         use sha2::{Digest, Sha256};
-        let hash = Sha256::digest(public_key.to_pkcs1_der()?.as_bytes());
+        let hash = Sha256::digest(pkcs1.as_bytes());
         let b64 = base64::engine::general_purpose::STANDARD.encode(&hash);
         format!("SHA256:{}", b64)
     };
     Ok(fingerprint)
 }
 
-fn generate_assertion(cfg: &crate::config::Config) -> Result<String, Error> {
+fn load_rsa_private_key_from_pem(
+    pem_str: &str,
+    passphrase: Option<&str>,
+) -> Result<rsa::RsaPrivateKey, Error> {
+    if let Ok(blocks) = pem::parse_many(pem_str.as_bytes()) {
+        for block in &blocks {
+            match block.tag() {
+                "ENCRYPTED PRIVATE KEY" => {
+                    let pass = passphrase.ok_or_else(|| {
+                        Error::Key("Encrypted private key provided but no passphrase set".into())
+                    })?;
+                    return rsa::RsaPrivateKey::from_pkcs8_encrypted_der(block.contents(), pass)
+                        .map_err(|e| Error::Key(format!("PKCS#8 decryption failed: {e}")));
+                }
+                "PRIVATE KEY" => {
+                    return rsa::RsaPrivateKey::from_pkcs8_der(block.contents())
+                        .map_err(|e| Error::Key(format!("PKCS#8 parse failed: {e}")));
+                }
+                "RSA PRIVATE KEY" => {
+                    return rsa::RsaPrivateKey::from_pkcs1_der(block.contents())
+                        .map_err(|e| Error::Key(format!("PKCS#1 parse failed: {e}")));
+                }
+                _ => continue,
+            }
+        }
+    }
+
+    if let Some(pass) = passphrase {
+        if let Ok(key) = rsa::RsaPrivateKey::from_pkcs8_encrypted_pem(pem_str, pass) {
+            return Ok(key);
+        }
+    }
+    if let Ok(key) = rsa::RsaPrivateKey::from_pkcs8_pem(pem_str) {
+        return Ok(key);
+    }
+    if let Ok(key) = rsa::RsaPrivateKey::from_pkcs1_pem(pem_str) {
+        return Ok(key);
+    }
+
+    Err(Error::Key(
+        "Invalid RSA private key: unsupported format or incorrect passphrase".into(),
+    ))
+}
+
+fn generate_assertion(cfg: &Config) -> Result<String, Error> {
     // Test helper: allow bypass via special prefix
-    let private_key = &cfg.private_key()?;
+    let private_key = cfg.private_key()?;
     let prefix = "TEST://assertion:";
     if let Some(rest) = private_key.strip_prefix(prefix) {
         // No iat/exp context in bypass; pick small window forcing refresh paths in tests if needed
@@ -37,12 +80,9 @@ fn generate_assertion(cfg: &crate::config::Config) -> Result<String, Error> {
         Some(login) => login,
         None => &cfg.user,
     };
-    let fingerprint = generate_fingerprint(private_key)?;
-    if !fingerprint.starts_with("SHA256:") {
-        return Err(Error::Config(
-            "public_key_fingerprint must start with 'SHA256:'".into(),
-        ));
-    }
+    let rsa_key =
+        load_rsa_private_key_from_pem(&private_key, cfg.private_key_passphrase.as_deref())?;
+    let fingerprint = compute_fingerprint(&rsa_key)?;
     let account_norm = cfg.account.to_uppercase().replace('.', "-");
     let user_norm = name.to_uppercase();
     let sub = format!("{}.{}", account_norm, user_norm);
@@ -69,52 +109,10 @@ fn generate_assertion(cfg: &crate::config::Config) -> Result<String, Error> {
     }
     let claims = Claims { iss, sub, iat, exp };
 
-    let pem_bytes = if let Some(ref key) = cfg.private_key {
-        key.as_bytes().to_vec()
-    } else if let Some(ref path) = cfg.private_key_path {
-        std::fs::read(path).map_err(|e| Error::Key(format!("Failed reading private key: {e}")))?
-    } else {
-        return Err(Error::Config(
-            "Missing private key for JWT generation: set SNOWFLAKE_PRIVATE_KEY or private_key/private_key_path in config"
-                .into(),
-        ));
-    };
-    // Parse PEM and handle encrypted PKCS#8
-    let enc_key = match pem::parse_many(&pem_bytes) {
-        Ok(blocks) if !blocks.is_empty() => {
-            let block = &blocks[0];
-            match block.tag() {
-                "ENCRYPTED PRIVATE KEY" => {
-                    let pass = cfg.private_key_passphrase.as_deref().ok_or_else(|| {
-                        Error::Key("Encrypted private key provided but no passphrase set".into())
-                    })?;
-                    let info = pkcs8::EncryptedPrivateKeyInfo::from_der(block.contents())
-                        .map_err(|e| Error::Key(format!("Encrypted PKCS#8 parse error: {e}")))?;
-                    let der = info
-                        .decrypt(pass)
-                        .map_err(|e| Error::Key(format!("PKCS#8 decryption failed: {e}")))?;
-                    let rsa = rsa::RsaPrivateKey::from_pkcs8_der(der.as_bytes())
-                        .map_err(|e| Error::Key(format!("PKCS#8 to RSA parse failed: {e}")))?;
-                    let pkcs1 = rsa
-                        .to_pkcs1_der()
-                        .map_err(|e| Error::Key(format!("PKCS#1 DER encode failed: {e}")))?;
-                    jsonwebtoken::EncodingKey::from_rsa_der(pkcs1.as_bytes())
-                }
-                "PRIVATE KEY" => {
-                    let rsa = rsa::RsaPrivateKey::from_pkcs8_der(block.contents())
-                        .map_err(|e| Error::Key(format!("PKCS#8 parse failed: {e}")))?;
-                    let pkcs1 = rsa
-                        .to_pkcs1_der()
-                        .map_err(|e| Error::Key(format!("PKCS#1 DER encode failed: {e}")))?;
-                    jsonwebtoken::EncodingKey::from_rsa_der(pkcs1.as_bytes())
-                }
-                _ => jsonwebtoken::EncodingKey::from_rsa_pem(&pem_bytes)
-                    .map_err(|e| Error::Key(format!("Invalid RSA private key: {e}")))?,
-            }
-        }
-        _ => jsonwebtoken::EncodingKey::from_rsa_pem(&pem_bytes)
-            .map_err(|e| Error::Key(format!("Invalid RSA private key: {e}")))?,
-    };
+    let pkcs1 = rsa_key
+        .to_pkcs1_der()
+        .map_err(|e| Error::Key(format!("PKCS#1 DER encode failed: {e}")))?;
+    let enc_key = jsonwebtoken::EncodingKey::from_rsa_der(pkcs1.as_bytes());
     let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     let assertion = jsonwebtoken::encode(&header, &claims, &enc_key)
         .map_err(|e| Error::JwtSign(format!("JWT signing failed: {e}")))?;
@@ -308,10 +306,15 @@ mod tests {
     // tests/generate_assertion_tests.rs
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use pkcs8::EncodePrivateKey;
+    use rand::thread_rng;
+    use rsa::RsaPrivateKey;
     use serde_json::Value;
 
-    use crate::{Config, client::generate_assertion};
+    use super::generate_assertion;
+    use crate::Config;
 
     fn now_secs() -> u64 {
         SystemTime::now()
@@ -430,5 +433,42 @@ mod tests {
             t0.saturating_sub(30),
             t1.saturating_add(30)
         );
+    }
+
+    fn to_encrypted_pem(body: &str) -> String {
+        let mut out = String::with_capacity(body.len() + body.len() / 64 + 64);
+        out.push_str("-----BEGIN ENCRYPTED PRIVATE KEY-----\n");
+        for chunk in body.as_bytes().chunks(64) {
+            out.push_str(std::str::from_utf8(chunk).expect("valid base64 chunk"));
+            out.push('\n');
+        }
+        out.push_str("-----END ENCRYPTED PRIVATE KEY-----\n");
+        out
+    }
+
+    #[test]
+    fn encrypted_pkcs8_with_passphrase_parses() {
+        const PASSPHRASE: &str = "test-pass";
+        let mut rng = thread_rng();
+        let rsa = RsaPrivateKey::new(&mut rng, 2048).expect("keygen");
+        let encrypted = rsa
+            .to_pkcs8_encrypted_der(&mut rng, PASSPHRASE)
+            .expect("encrypt");
+        let pem_body = base64::engine::general_purpose::STANDARD.encode(encrypted.as_bytes());
+        let pem = to_encrypted_pem(&pem_body);
+
+        let cfg = Config::from_values(
+            "user",
+            None,
+            "acct",
+            "https://example",
+            None,
+            Some(pem),
+            None,
+            Some(PASSPHRASE.to_string()),
+            Some(60),
+        );
+
+        generate_assertion(&cfg).expect("should generate assertion with encrypted key");
     }
 }

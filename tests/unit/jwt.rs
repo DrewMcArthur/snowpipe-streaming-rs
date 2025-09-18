@@ -1,10 +1,10 @@
 use base64::Engine;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use pem::parse;
-use pkcs8::{EncodePrivateKey, DecodePrivateKey};
+use pkcs8::{DecodePrivateKey, EncodePrivateKey};
 use rand::thread_rng;
-use rsa::pkcs1::EncodeRsaPrivateKey;
 use rsa::RsaPrivateKey;
+use rsa::pkcs1::EncodeRsaPrivateKey;
 use snowpipe_streaming::Config;
 
 const PASSPHRASE: &str = "test-pass";
