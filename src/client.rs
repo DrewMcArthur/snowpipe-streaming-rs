@@ -82,7 +82,10 @@ fn generate_assertion(cfg: &Config) -> Result<String, Error> {
     };
     let rsa_key =
         load_rsa_private_key_from_pem(&private_key, cfg.private_key_passphrase.as_deref())?;
-    let fingerprint = compute_fingerprint(&rsa_key)?;
+    let fingerprint = match cfg.public_key_fp.as_ref() {
+        Some(fp) => fp.clone(),
+        None => compute_fingerprint(&rsa_key)?,
+    };
     let account_norm = cfg.account.to_uppercase().replace('.', "-");
     let user_norm = name.to_uppercase();
     let sub = format!("{}.{}", account_norm, user_norm);
@@ -359,6 +362,7 @@ mod tests {
             private_key: Some(TEST_PKCS8_PRIVKEY_PEM.to_string()),
             private_key_path: None,
             private_key_passphrase: None,
+            public_key_fp: None,
             jwt_exp_secs: Some(exp_secs),
         };
 
@@ -463,6 +467,7 @@ mod tests {
             Some(pem),
             None,
             Some(PASSPHRASE.to_string()),
+            None,
             Some(60),
         );
 

@@ -39,6 +39,7 @@ fn encrypted_pkcs8_decrypts_to_encoding_key() {
         Some(pem.clone()),
         None,
         Some(PASSPHRASE.to_string()),
+        None,
         Some(60),
     );
 

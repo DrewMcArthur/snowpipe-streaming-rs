@@ -11,6 +11,7 @@ async fn invalid_control_host_url_fails_fast() {
         None,
         None,
         None,
+        None,
         Some(60),
     );
 

@@ -14,6 +14,7 @@ pub struct Config {
     pub private_key: Option<String>,
     pub private_key_path: Option<String>,
     pub private_key_passphrase: Option<String>,
+    pub public_key_fp: Option<String>,
     pub jwt_exp_secs: Option<u64>,
 }
 
@@ -28,6 +29,7 @@ impl Config {
         private_key: Option<String>,
         private_key_path: Option<String>,
         private_key_passphrase: Option<String>,
+        public_key_fp: Option<String>,
         jwt_exp_secs: Option<u64>,
     ) -> Self {
         Self {
@@ -39,6 +41,7 @@ impl Config {
             private_key,
             private_key_path,
             private_key_passphrase,
+            public_key_fp,
             jwt_exp_secs,
         }
     }
@@ -89,6 +92,7 @@ fn read_config_from_env() -> Result<Config, Error> {
         private_key: std::env::var("SNOWFLAKE_PRIVATE_KEY").ok(),
         private_key_path: std::env::var("SNOWFLAKE_PRIVATE_KEY_PATH").ok(),
         private_key_passphrase: std::env::var("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE").ok(),
+        public_key_fp: std::env::var("SNOWFLAKE_PUBLIC_KEY_FP").ok(),
         jwt_exp_secs: std::env::var("SNOWFLAKE_JWT_EXP_SECS")
             .ok()
             .and_then(|s| s.parse::<u64>().ok()),
