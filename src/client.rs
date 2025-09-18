@@ -18,7 +18,7 @@ fn compute_fingerprint(key: &rsa::RsaPrivateKey) -> Result<String, Error> {
     let fingerprint = {
         use sha2::{Digest, Sha256};
         let hash = Sha256::digest(pkcs1.as_bytes());
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&hash);
+        let b64 = base64::engine::general_purpose::STANDARD.encode(hash);
         format!("SHA256:{}", b64)
     };
     Ok(fingerprint)
@@ -51,11 +51,10 @@ fn load_rsa_private_key_from_pem(
         }
     }
 
-    if let Some(pass) = passphrase {
-        if let Ok(key) = rsa::RsaPrivateKey::from_pkcs8_encrypted_pem(pem_str, pass) {
+    if let Some(pass) = passphrase
+        && let Ok(key) = rsa::RsaPrivateKey::from_pkcs8_encrypted_pem(pem_str, pass) {
             return Ok(key);
         }
-    }
     if let Ok(key) = rsa::RsaPrivateKey::from_pkcs8_pem(pem_str) {
         return Ok(key);
     }
@@ -307,7 +306,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use base64::Engine;
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
     use pkcs8::EncodePrivateKey;
     use rand::thread_rng;
     use rsa::RsaPrivateKey;
@@ -454,7 +453,7 @@ mod tests {
         let encrypted = rsa
             .to_pkcs8_encrypted_der(&mut rng, PASSPHRASE)
             .expect("encrypt");
-        let pem_body = base64::engine::general_purpose::STANDARD.encode(encrypted.as_bytes());
+        let pem_body = STANDARD.encode(encrypted.as_bytes());
         let pem = to_encrypted_pem(&pem_body);
 
         let cfg = Config::from_values(
