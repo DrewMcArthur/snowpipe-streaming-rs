@@ -3,7 +3,8 @@ use std::marker::PhantomData;
 use base64::Engine;
 use pkcs8::DecodePrivateKey;
 use reqwest::Client;
-use rsa::pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, EncodeRsaPublicKey};
+use rsa::pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey};
+use rsa::pkcs8::EncodePublicKey;
 use serde::Serialize;
 use tracing::{error, info};
 
@@ -11,12 +12,12 @@ use crate::{channel::StreamingIngestChannel, config::Config, errors::Error};
 
 /// Returns base64 encoded fingerprint of a public key derived from the RSA key.
 fn compute_fingerprint(key: &rsa::RsaPublicKey) -> Result<String, Error> {
-    let pkcs1 = key
-        .to_pkcs1_der()
-        .map_err(|e| Error::Key(format!("PKCS#1 DER encode failed: {e}")))?;
+    let spki = key
+        .to_public_key_der()
+        .map_err(|e| Error::Key(format!("SubjectPublicKeyInfo DER encode failed: {e}")))?;
     let fingerprint = {
         use sha2::{Digest, Sha256};
-        let hash = Sha256::digest(pkcs1.as_bytes());
+        let hash = Sha256::digest(spki.as_bytes());
         let b64 = base64::engine::general_purpose::STANDARD.encode(hash);
         format!("SHA256:{}", b64)
     };
