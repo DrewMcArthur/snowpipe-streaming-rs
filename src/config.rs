@@ -9,7 +9,7 @@ pub struct Config {
     pub account: String,
     pub url: String,
     pub jwt_token: Option<String>,
-    pub public_key_fingerprint: Option<String>, 
+    pub public_key_fingerprint: Option<String>,
     pub private_key: Option<String>,
     pub private_key_path: Option<String>,
     pub private_key_passphrase: Option<String>,

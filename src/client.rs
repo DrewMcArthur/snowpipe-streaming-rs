@@ -22,7 +22,10 @@ fn generate_assertion(cfg: &crate::config::Config) -> Result<String, Error> {
         Some(login) => login,
         None => &cfg.user,
     };
-    let fingerprint = cfg.public_key_fingerprint.as_ref().unwrap_or_else(|| { panic!("Missing public_key_fingerprint in config for JWT generation") });
+    let fingerprint = cfg
+        .public_key_fingerprint
+        .as_ref()
+        .unwrap_or_else(|| panic!("Missing public_key_fingerprint in config for JWT generation"));
     let iss = format!("{}.{}.SHA256:{}", cfg.account, name, fingerprint);
     let sub = format!("{}.{}", cfg.account, name);
     let iat = std::time::SystemTime::now()
@@ -39,12 +42,7 @@ fn generate_assertion(cfg: &crate::config::Config) -> Result<String, Error> {
         iat: u64,
         exp: u64,
     }
-    let claims = Claims {
-        iss,
-        sub,
-        iat,
-        exp
-    };
+    let claims = Claims { iss, sub, iat, exp };
 
     let pem_bytes = if let Some(ref key) = cfg.private_key {
         key.as_bytes().to_vec()
