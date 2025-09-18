@@ -1,5 +1,7 @@
 //! Configuration for the client
 
+use base64::Engine;
+
 use crate::errors::Error;
 
 #[derive(serde::Deserialize, Clone)]
@@ -9,7 +11,6 @@ pub struct Config {
     pub account: String,
     pub url: String,
     pub jwt_token: Option<String>,
-    pub public_key_fingerprint: Option<String>, 
     pub private_key: Option<String>,
     pub private_key_path: Option<String>,
     pub private_key_passphrase: Option<String>,
@@ -24,7 +25,6 @@ impl Config {
         account: impl Into<String>,
         url: impl Into<String>,
         jwt_token: Option<String>,
-        public_key_fingerprint: Option<String>,
         private_key: Option<String>,
         private_key_path: Option<String>,
         private_key_passphrase: Option<String>,
@@ -36,7 +36,6 @@ impl Config {
             account: account.into(),
             url: url.into(),
             jwt_token,
-            public_key_fingerprint,
             private_key,
             private_key_path,
             private_key_passphrase,
@@ -53,6 +52,29 @@ impl Config {
     pub fn from_env() -> Result<Self, Error> {
         read_config_from_env()
     }
+
+    pub fn private_key(&self) -> Result<String, Error> {
+        if let Some(ref raw) = self.private_key {
+            if raw.starts_with("-----BEGIN") {
+                // Assume PEM format directly in env var
+                Ok(raw.to_string())
+            } else {
+                // Assume base64-encoded DER
+                let engine = base64::engine::general_purpose::STANDARD;
+                let der = engine.decode(raw).map_err(|e| {
+                    Error::Config(format!("Failed to base64-decode private_key: {}", e))
+                })?;
+                Ok(String::from_utf8(der)?)
+            }
+        } else if let Some(ref path) = self.private_key_path {
+            let contents = std::fs::read_to_string(path).map_err(Error::Io)?;
+            Ok(contents)
+        } else {
+            Err(Error::Config(
+                "Missing private key for JWT generation".into(),
+            ))
+        }
+    }
 }
 
 fn read_config_from_env() -> Result<Config, Error> {
@@ -64,7 +86,6 @@ fn read_config_from_env() -> Result<Config, Error> {
             .map_err(|_| Error::Config("Missing SNOWFLAKE_ACCOUNT env var".to_string()))?,
         url: std::env::var("SNOWFLAKE_URL")
             .map_err(|_| Error::Config("Missing SNOWFLAKE_URL env var".to_string()))?,
-        public_key_fingerprint: std::env::var("SNOWFLAKE_PUBLIC_KEY_FINGERPRINT").ok(),
         private_key: std::env::var("SNOWFLAKE_PRIVATE_KEY").ok(),
         private_key_path: std::env::var("SNOWFLAKE_PRIVATE_KEY_PATH").ok(),
         private_key_passphrase: std::env::var("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE").ok(),

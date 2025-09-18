@@ -1,35 +1,63 @@
 use std::marker::PhantomData;
 
+use base64::Engine;
 use pkcs8::DecodePrivateKey;
 use pkcs8::der::Decode;
 use reqwest::Client;
-use rsa::pkcs1::EncodeRsaPrivateKey;
+use rsa::pkcs1::{EncodeRsaPrivateKey, EncodeRsaPublicKey};
 use serde::Serialize;
 use tracing::{error, info};
 
 use crate::{channel::StreamingIngestChannel, config::Config, errors::Error};
 
+/// returns base64 encoded fingerprint of a public key,
+/// given the bytes of the private key
+fn generate_fingerprint(private_key_bytes: &str) -> Result<String, Error> {
+    let key = rsa::RsaPrivateKey::from_pkcs8_pem(private_key_bytes)?;
+    let public_key = key.to_public_key();
+
+    let fingerprint = {
+        use sha2::{Digest, Sha256};
+        let hash = Sha256::digest(public_key.to_pkcs1_der()?.as_bytes());
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&hash);
+        format!("SHA256:{}", b64)
+    };
+    Ok(fingerprint)
+}
+
 fn generate_assertion(cfg: &crate::config::Config) -> Result<String, Error> {
     // Test helper: allow bypass via special prefix
-    if let Some(ref raw) = cfg.private_key {
-        let prefix = "TEST://assertion:";
-        if let Some(rest) = raw.strip_prefix(prefix) {
-            // No iat/exp context in bypass; pick small window forcing refresh paths in tests if needed
-            return Ok(rest.to_string());
-        }
+    let private_key = &cfg.private_key()?;
+    let prefix = "TEST://assertion:";
+    if let Some(rest) = private_key.strip_prefix(prefix) {
+        // No iat/exp context in bypass; pick small window forcing refresh paths in tests if needed
+        return Ok(rest.to_string());
     }
     let name = match cfg.login.as_ref() {
         Some(login) => login,
         None => &cfg.user,
     };
-    let fingerprint = cfg.public_key_fingerprint.as_ref().unwrap_or_else(|| { panic!("Missing public_key_fingerprint in config for JWT generation") });
-    let iss = format!("{}.{}.SHA256:{}", cfg.account, name, fingerprint);
-    let sub = format!("{}.{}", cfg.account, name);
+    let fingerprint = generate_fingerprint(private_key)?;
+    if !fingerprint.starts_with("SHA256:") {
+        return Err(Error::Config(
+            "public_key_fingerprint must start with 'SHA256:'".into(),
+        ));
+    }
+    let account_norm = cfg.account.to_uppercase().replace('.', "-");
+    let user_norm = name.to_uppercase();
+    let sub = format!("{}.{}", account_norm, user_norm);
+    let iss = format!("{}.{}", sub, fingerprint);
     let iat = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| Error::Config(format!("Time error: {e}")))?
         .as_secs();
     let exp_secs = cfg.jwt_exp_secs.unwrap_or(3600);
+    if exp_secs == 0 || exp_secs > 3600 {
+        return Err(Error::Config(format!(
+            "jwt_exp_secs must be between 1 and 3600 seconds (got {})",
+            exp_secs
+        )));
+    }
     let exp = iat + exp_secs;
 
     #[derive(serde::Serialize)]
@@ -39,12 +67,7 @@ fn generate_assertion(cfg: &crate::config::Config) -> Result<String, Error> {
         iat: u64,
         exp: u64,
     }
-    let claims = Claims {
-        iss,
-        sub,
-        iat,
-        exp
-    };
+    let claims = Claims { iss, sub, iat, exp };
 
     let pem_bytes = if let Some(ref key) = cfg.private_key {
         key.as_bytes().to_vec()
@@ -278,3 +301,134 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
 
 // Legacy snowsql-based JWT generation was explored but not used; programmatic
 // OAuth2 control-plane token acquisition is implemented instead.
+
+#[cfg(test)]
+mod tests {
+
+    // tests/generate_assertion_tests.rs
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use serde_json::Value;
+
+    use crate::{Config, client::generate_assertion};
+
+    fn now_secs() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
+    fn decode_jwt_payload(jwt: &str) -> Value {
+        let parts: Vec<&str> = jwt.split('.').collect();
+        assert_eq!(parts.len(), 3, "JWT must have 3 segments");
+        let payload_b64 = parts[1];
+        let bytes = URL_SAFE_NO_PAD
+            .decode(payload_b64.as_bytes())
+            .expect("payload must be valid base64url (no padding)");
+        serde_json::from_slice::<Value>(&bytes).expect("payload must be valid JSON")
+    }
+
+    /// A minimal PKCS#8 private key PEM for tests. You can replace with your own fixture.
+    /// This is intended only to exercise signing; the test does not verify the signature.
+    const TEST_PKCS8_PRIVKEY_PEM: &str = include_str!("../tests/fixtures/id_rsa.pem");
+
+    /// Happy path: builds a JWT whose claims match Snowflake’s expectations.
+    /// We assert:
+    /// - `iss` contains UPPERCASE <ACCOUNT>.<USER>.SHA256:<fingerprint>
+    /// - `sub` equals UPPERCASE <ACCOUNT>.<USER>
+    /// - `exp - iat == jwt_exp_secs` and <= 3600
+    /// - `iat` ≈ now (allow small skew)
+    #[test]
+    fn generates_snowflake_style_jwt_claims() {
+        // Arrange
+        // Example inputs you expect your library to normalize:
+        let account = "xy12345.us-east-1"; // many users pass this form
+        let user = "alice";
+        // In unit tests we don't recompute the fingerprint; we pass the value we expect to see in `iss`.
+        // Ensure it starts with "SHA256:".
+        let exp_secs = 900u64;
+
+        let cfg = Config {
+            user: user.to_string(),
+            login: None,
+            account: account.to_string(),
+            url: "https://xy12345.us-east-1.snowflakecomputing.com".to_string(),
+            jwt_token: None,
+            private_key: Some(TEST_PKCS8_PRIVKEY_PEM.to_string()),
+            private_key_path: None,
+            private_key_passphrase: None,
+            jwt_exp_secs: Some(exp_secs),
+        };
+
+        let t0 = now_secs();
+
+        // Act
+        let jwt = generate_assertion(&cfg).expect("should generate a JWT");
+        let payload = decode_jwt_payload(&jwt);
+
+        // Assert structure
+        let iss = payload
+            .get("iss")
+            .and_then(|v| v.as_str())
+            .expect("iss must exist");
+        let sub = payload
+            .get("sub")
+            .and_then(|v| v.as_str())
+            .expect("sub must exist");
+        let iat = payload
+            .get("iat")
+            .and_then(|v| v.as_u64())
+            .expect("iat must be u64");
+        let exp = payload
+            .get("exp")
+            .and_then(|v| v.as_u64())
+            .expect("exp must be u64");
+
+        // Account & user should be uppercased in both iss/sub.
+        let want_account_uc = account.to_uppercase().replace('.', "-"); // common normalization
+        let want_user_uc = user.to_uppercase();
+
+        // `sub` is "<ACCOUNT>.<USER>"
+        assert!(
+            sub == format!("{}.{}", want_account_uc, want_user_uc)
+                || sub == format!("{}.{}", account.to_uppercase(), want_user_uc),
+            "sub should be '<ACCOUNT>.<USER>' uppercased (with possible '.'→'-' normalization); got '{}'",
+            sub
+        );
+
+        // `iss` is "<ACCOUNT>.<USER>.SHA256:<fp>"
+        assert!(
+            iss.contains("SHA256"),
+            "iss must contain the SHA256 fingerprint; got '{}'",
+            iss
+        );
+        assert!(
+            iss.starts_with(&format!("{}.", sub)),
+            "iss should start with '<ACCOUNT>.<USER>.' and then fingerprint; got '{}'",
+            iss
+        );
+
+        // Time math: exp - iat == jwt_exp_secs and <= 3600
+        assert_eq!(
+            exp.saturating_sub(iat),
+            exp_secs,
+            "exp - iat must equal jwt_exp_secs"
+        );
+        assert!(
+            exp_secs <= 3600,
+            "jwt_exp_secs should be <= 3600 for Snowflake key-pair auth"
+        );
+
+        // iat should be close to now (allow generous skew for CI)
+        let t1 = now_secs();
+        assert!(
+            iat >= t0.saturating_sub(30) && iat <= t1.saturating_add(30),
+            "iat should be near 'now' (±30s); got {}, window [{}, {}]",
+            iat,
+            t0.saturating_sub(30),
+            t1.saturating_add(30)
+        );
+    }
+}

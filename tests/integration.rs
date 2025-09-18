@@ -9,6 +9,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use snowpipe_streaming::{Config, StreamingIngestClient};
 
+mod unit;
+
 #[derive(Serialize, Clone)]
 struct RowType {
     id: u64,

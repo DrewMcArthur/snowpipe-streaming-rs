@@ -13,11 +13,18 @@ pub enum Error {
     Timeout(std::time::Duration),
     Key(String),
     JwtSign(String),
+    Utf8Error(std::string::FromUtf8Error),
 }
 
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
         Error::Io(err)
+    }
+}
+
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(err: std::string::FromUtf8Error) -> Self {
+        Error::Utf8Error(err)
     }
 }
 
@@ -30,6 +37,18 @@ impl From<serde_json::Error> for Error {
 impl From<reqwest::Error> for Error {
     fn from(err: reqwest::Error) -> Self {
         Error::Reqwest(err)
+    }
+}
+
+impl From<pkcs8::Error> for Error {
+    fn from(err: pkcs8::Error) -> Self {
+        Error::Key(format!("PKCS#8 error: {}", err))
+    }
+}
+
+impl From<rsa::pkcs1::Error> for Error {
+    fn from(err: rsa::pkcs1::Error) -> Self {
+        Error::Key(format!("PKCS#1 error: {}", err))
     }
 }
 
@@ -46,6 +65,7 @@ impl std::fmt::Display for Error {
             Error::Json(e) => write!(f, "JSON error: {}", e),
             Error::Http(e, msg) => write!(f, "HTTP error: {} {}", e, msg),
             Error::Reqwest(e) => write!(f, "Reqwest error: {}", e),
+            Error::Utf8Error(e) => write!(f, "UTF-8 error: {}", e),
             Error::IngestHostDiscovery(code, body) => {
                 write!(
                     f,

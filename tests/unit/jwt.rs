@@ -1,4 +1,3 @@
-use snowpipe_streaming::Error;
 use pkcs8::EncodePrivateKey;
 use rsa::pkcs1::EncodeRsaPrivateKey;
 
@@ -7,10 +6,7 @@ fn encrypted_pkcs8_decrypts_to_encoding_key() {
     // Generate an RSA keypair and encrypt to PKCS#8 DER at runtime
     let mut rng = rand::thread_rng();
     let rsa = rsa::RsaPrivateKey::new(&mut rng, 2048).expect("keygen");
-    let pkcs8_der = rsa
-        .to_pkcs8_der()
-        .expect("pkcs8 der")
-        .to_bytes();
+    let pkcs8_der = rsa.to_pkcs8_der().expect("pkcs8 der").to_bytes();
 
     let pass = "test-pass";
     let enc = pkcs8::EncryptedPrivateKeyInfo::encrypt(
@@ -28,11 +24,12 @@ fn encrypted_pkcs8_decrypts_to_encoding_key() {
     );
 
     // Build a minimal config and attempt to build an assertion (will panic on network if used)
-    let cfg = snowpipe_streaming::config::Config {
+    let cfg = snowpipe_streaming::Config {
         user: "user".into(),
+        login: None,
         account: "acct".into(),
         url: "https://example".into(),
-        jwt_token: String::new(),
+        jwt_token: None,
         private_key: Some(pem),
         private_key_path: None,
         private_key_passphrase: Some(pass.into()),
@@ -50,7 +47,21 @@ fn encrypted_pkcs8_decrypts_to_encoding_key() {
     let key = jsonwebtoken::EncodingKey::from_rsa_der(pkcs1.as_bytes());
     let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     #[derive(serde::Serialize)]
-    struct Claims { iss: String, sub: String, aud: String, iat: usize, exp: usize, jti: String }
-    let claims = Claims { iss: "user".into(), sub: "user".into(), aud: url.into(), iat: 0, exp: 1, jti: "x".into() };
+    struct Claims {
+        iss: String,
+        sub: String,
+        aud: String,
+        iat: usize,
+        exp: usize,
+        jti: String,
+    }
+    let claims = Claims {
+        iss: "user".into(),
+        sub: "user".into(),
+        aud: url.into(),
+        iat: 0,
+        exp: 1,
+        jti: "x".into(),
+    };
     let _ = jsonwebtoken::encode(&header, &claims, &key).expect("sign");
 }
