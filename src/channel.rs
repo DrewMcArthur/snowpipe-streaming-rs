@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use serde::Serialize;
-use tracing::{error, info, warn};
+use tracing::{error, info, trace, warn};
 
 use crate::{
     Error, StreamingIngestClient,
@@ -101,7 +101,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
         }
 
         let data_len = data.len();
-        info!(
+        trace!(
             "append rows: channel='{}' bytes={}",
             self.channel_name, data_len
         );
@@ -147,7 +147,7 @@ impl<R: Serialize + Clone> StreamingIngestChannel<R> {
 
         self.last_pushed_offset_token = offset;
         self.continuation_token = resp.next_continuation_token;
-        info!(
+        trace!(
             "append rows ok: channel='{}' pushed_offset={} next_ctok='{}'",
             self.channel_name, self.last_pushed_offset_token, self.continuation_token
         );
