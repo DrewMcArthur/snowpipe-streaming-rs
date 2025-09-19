@@ -71,7 +71,7 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         } else {
             format!("https://{}", config.url)
         };
-        let control_host = control_host.replace("_","-").to_lowercase();
+        let control_host = control_host.replace("_", "-").to_lowercase();
         // Validate control host is a proper URL before performing any network calls
         let _ = reqwest::Url::parse(&control_host).map_err(|e| {
             Error::Config(format!(
