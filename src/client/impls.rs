@@ -18,6 +18,34 @@ const USER_AGENT: &str = "snowpipe-streaming-rust-sdk/0.1.0";
 const DEFAULT_REFRESH_MARGIN_SECS: u64 = 30;
 const BACKOFF_DELAY_SECS: u64 = 2;
 
+struct TokenRequestPolicy<
+    FetchFn,
+    RefreshFn,
+    BuildAuthErrFn,
+    RetryLogFn,
+    FailLogFn,
+    RateLogFn,
+    FetchFut,
+    RefreshFut,
+> where
+    FetchFn: FnMut() -> FetchFut,
+    RefreshFn: FnMut() -> RefreshFut,
+    BuildAuthErrFn: Fn(String) -> Error,
+    RetryLogFn: Fn(),
+    FailLogFn: Fn(),
+    RateLogFn: Fn(u64),
+    FetchFut: Future<Output = Result<String, Error>>,
+    RefreshFut: Future<Output = Result<(), Error>>,
+{
+    allow_unauthorized_retry: bool,
+    fetch_token: FetchFn,
+    refresh_token: RefreshFn,
+    unauthorized_retry_log: RetryLogFn,
+    unauthorized_fail_log: FailLogFn,
+    rate_limit_log: RateLogFn,
+    build_auth_error: BuildAuthErrFn,
+}
+
 impl<R: Serialize + Clone> StreamingIngestClient<R> {
     /// Create a new StreamingIngestClient
     /// # Arguments
@@ -188,13 +216,16 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
     >(
         &self,
         builder: F,
-        mut fetch_token: FetchFn,
-        mut refresh_token: RefreshFn,
-        allow_unauthorized_retry: bool,
-        unauthorized_retry_log: RetryLogFn,
-        unauthorized_fail_log: FailLogFn,
-        rate_limit_log: RateLogFn,
-        build_auth_error: BuildAuthErrFn,
+        mut policy: TokenRequestPolicy<
+            FetchFn,
+            RefreshFn,
+            BuildAuthErrFn,
+            RetryLogFn,
+            FailLogFn,
+            RateLogFn,
+            FetchFut,
+            RefreshFut,
+        >,
     ) -> Result<reqwest::Response, Error>
     where
         F: Fn(&Client, &str) -> reqwest::RequestBuilder,
@@ -211,26 +242,26 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         let mut rate_limit_retry = false;
 
         loop {
-            let token = fetch_token().await?;
+            let token = (policy.fetch_token)().await?;
 
             let response = builder(&self.http_client, &token).send().await?;
             let status = response.status();
 
             if status == StatusCode::UNAUTHORIZED {
                 let body = response.text().await.unwrap_or_default();
-                if allow_unauthorized_retry && !unauthorized_retry {
-                    unauthorized_retry_log();
-                    refresh_token().await?;
+                if policy.allow_unauthorized_retry && !unauthorized_retry {
+                    (policy.unauthorized_retry_log)();
+                    (policy.refresh_token)().await?;
                     unauthorized_retry = true;
                     continue;
                 }
-                unauthorized_fail_log();
-                return Err(build_auth_error(body));
+                (policy.unauthorized_fail_log)();
+                return Err((policy.build_auth_error)(body));
             }
 
             if status == StatusCode::TOO_MANY_REQUESTS {
                 if !rate_limit_retry {
-                    rate_limit_log(self.backoff_delay.as_secs());
+                    (policy.rate_limit_log)(self.backoff_delay.as_secs());
                     sleep(self.backoff_delay).await;
                     rate_limit_retry = true;
                     continue;
@@ -247,26 +278,30 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
     where
         F: Fn(&Client, &str) -> reqwest::RequestBuilder,
     {
-        self.send_with_token_strategy(
-            builder,
-            || async { self.ensure_valid_jwt().await },
-            || async {
+        let policy = TokenRequestPolicy {
+            allow_unauthorized_retry: self.retry_on_unauthorized,
+            fetch_token: || async { self.ensure_valid_jwt().await },
+            refresh_token: || async {
                 self.invalidate_jwt().await;
                 sleep(std::time::Duration::from_millis(1100)).await;
                 Ok(())
             },
-            self.retry_on_unauthorized,
-            || warn!("received 401 from Snowflake; refreshing JWT and retrying"),
-            || warn!("received 401 from Snowflake after retry; surfacing authentication failure"),
-            |delay| {
+            unauthorized_retry_log: || {
+                warn!("received 401 from Snowflake; refreshing JWT and retrying")
+            },
+            unauthorized_fail_log: || {
+                warn!("received 401 from Snowflake after retry; surfacing authentication failure")
+            },
+            rate_limit_log: |delay| {
                 warn!(
                     "received 429 TOO MANY REQUESTS; sleeping {} seconds before retry",
                     delay
                 );
             },
-            |body| Error::Auth(format!("401 Unauthorized: {}", body)),
-        )
-        .await
+            build_auth_error: |body| Error::Auth(format!("401 Unauthorized: {}", body)),
+        };
+
+        self.send_with_token_strategy(builder, policy).await
     }
 
     pub(crate) async fn send_with_scoped_token<F>(
@@ -280,27 +315,31 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             self.get_scoped_token().await?;
         }
 
-        self.send_with_token_strategy(
-            builder,
-            || async {
+        let policy = TokenRequestPolicy {
+            allow_unauthorized_retry: true,
+            fetch_token: || async {
                 let guard = self.scoped_token.lock().await;
                 Ok(guard
                     .clone()
                     .expect("scoped token should be available before request"))
             },
-            || async { self.get_scoped_token().await },
-            true,
-            || warn!("scoped token rejected with 401; refreshing scoped token and retrying"),
-            || warn!("scoped token rejected again after retry; surfacing authentication failure"),
-            |delay| {
+            refresh_token: || async { self.get_scoped_token().await },
+            unauthorized_retry_log: || {
+                warn!("scoped token rejected with 401; refreshing scoped token and retrying")
+            },
+            unauthorized_fail_log: || {
+                warn!("scoped token rejected again after retry; surfacing authentication failure")
+            },
+            rate_limit_log: |delay| {
                 warn!(
                     "received 429 from ingest endpoint; sleeping {} seconds before retry",
                     delay
                 );
             },
-            |body| Error::Auth(format!("Scoped token unauthorized: {}", body)),
-        )
-        .await
+            build_auth_error: |body| Error::Auth(format!("Scoped token unauthorized: {}", body)),
+        };
+
+        self.send_with_token_strategy(builder, policy).await
     }
 
     pub async fn open_channel(
