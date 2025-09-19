@@ -1607,6 +1607,7 @@ name = "snowpipe-streaming"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "bytes",
  "jiff",
  "jsonwebtoken",
  "pem",

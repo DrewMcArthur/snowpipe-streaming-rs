@@ -1,3 +1,5 @@
+use crate::tests::test_support::{base_config, capture_logs, drain_logs};
+use crate::{Config, StreamingIngestClient};
 use base64::Engine;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use pem::parse;
@@ -5,7 +7,8 @@ use pkcs8::{DecodePrivateKey, EncodePrivateKey};
 use rand::thread_rng;
 use rsa::RsaPrivateKey;
 use rsa::pkcs1::EncodeRsaPrivateKey;
-use snowpipe_streaming::Config;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const PASSPHRASE: &str = "test-pass";
 
@@ -73,4 +76,46 @@ fn encrypted_pkcs8_decrypts_to_encoding_key() {
     };
 
     jsonwebtoken::encode(&header, &claims, &encoding_key).expect("signing should succeed");
+}
+
+#[tokio::test]
+async fn logs_deprecation_when_jwt_provided() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/v2/streaming/hostname"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(server.uri()))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("scoped-token"))
+        .mount(&server)
+        .await;
+
+    let (lines, guard) = capture_logs();
+
+    #[derive(serde::Serialize, Clone)]
+    struct RowType {
+        id: u64,
+    }
+
+    let mut cfg = base_config(&server.uri());
+    cfg.jwt_token = Some("user-supplied-jwt".into());
+    cfg.jwt_exp_secs = Some(3600);
+
+    let client_res =
+        StreamingIngestClient::<RowType>::new("client", "db", "schema", "pipe", cfg).await;
+
+    drop(guard);
+    client_res.expect("client construction should succeed");
+
+    let logs = drain_logs(lines);
+    assert!(
+        logs.iter()
+            .any(|line| line.contains("WARN") && line.to_lowercase().contains("deprecated")),
+        "expected deprecation warning when jwt_token supplied, got {:?}",
+        logs
+    );
 }

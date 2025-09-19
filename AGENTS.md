@@ -6,5 +6,6 @@ This repository follows GitHub's spec-kit workflows.
 - If a command arrives without a corresponding prompt file, stop and flag it as unknown rather than improvising a response.
 - When a prompt is found, adhere to it precisely (variable substitutions, ordering, formatting, etc.).
 - There are no additional constraints beyond what each prompt specifies.
+- After producing specs or plans, gather every outstanding `[NEEDS CLARIFICATION]`, open question, or assumption and ask the user for explicit guidance before moving on.
 
 Example: for `/specify these are the arguments`, use `.github/prompts/specify.prompt.md` with `$ARGUMENTS="these are the arguments"` and follow the template verbatim.

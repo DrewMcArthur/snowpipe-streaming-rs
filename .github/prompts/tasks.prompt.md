@@ -4,6 +4,7 @@ description: Generate an actionable, dependency-ordered tasks.md for the feature
 
 Given the context provided as an argument, do this:
 
+0. Ensure all open questions in spec and plan documents are resolved.
 1. Run `.specify/scripts/bash/check-task-prerequisites.sh --json` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute.
 2. Load and analyze available design documents:
    - Always read plan.md for tech stack and libraries

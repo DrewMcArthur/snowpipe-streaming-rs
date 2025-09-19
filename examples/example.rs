@@ -12,7 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load configuration from a JSON file placed next to the binary
     let cfg = Config::from_file("config.json")?;
-    let client =
+    let mut client =
         StreamingIngestClient::<Row>::new("EXAMPLE_CLIENT", "MY_DB", "MY_SCHEMA", "MY_PIPE", cfg)
             .await?;
 

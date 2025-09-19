@@ -14,7 +14,7 @@ Usage
 ```
 use snowpipe_streaming::{ConfigLocation, StreamingIngestClient};
 
-let client = StreamingIngestClient::<YourRow>::new(
+let mut client = StreamingIngestClient::<YourRow>::new(
   "svc-client", "DB", "SCHEMA", "PIPE",
   ConfigLocation::File("config.json".into())
 ).await?;

@@ -1,21 +1,20 @@
 // tests/generate_assertion_tests.rs
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
-use base64::engine::general_purpose::{self, STANDARD, URL_SAFE_NO_PAD};
-use pkcs8::{DecodePublicKey, EncodePrivateKey};
-use rand::thread_rng;
-use rsa::{RsaPrivateKey, RsaPublicKey};
+use base64::engine::general_purpose::{self, URL_SAFE_NO_PAD};
+use pkcs8::DecodePublicKey;
+use rsa::RsaPublicKey;
 use serde_json::Value;
+use std::collections::HashSet;
+use std::sync::{Arc, Barrier};
+use std::thread;
 
-use crate::Config;
-use crate::client::crypto::{compute_fingerprint, generate_assertion};
+use crate::client::crypto::{JwtContext, build_assertion, compute_fingerprint};
+use crate::tests::test_support::with_captured_logs;
+use crate::{Config, Error};
 
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
+fn generate_assertion(cfg: &Config) -> Result<String, Error> {
+    Ok(build_assertion(cfg, true)?.token)
 }
 
 fn decode_jwt_payload(jwt: &str) -> Value {
@@ -28,15 +27,64 @@ fn decode_jwt_payload(jwt: &str) -> Value {
     serde_json::from_slice::<Value>(&bytes).expect("payload must be valid JSON")
 }
 
+#[test]
+fn next_iat_is_strictly_increasing() {
+    let first = super::next_iat_millis().expect("first timestamp");
+    let second = super::next_iat_millis().expect("second timestamp");
+
+    assert!(
+        second > first,
+        "subsequent calls must advance: first={}, second={}",
+        first,
+        second
+    );
+}
+
+#[test]
+fn next_iat_is_unique_across_threads() {
+    const WORKERS: usize = 32;
+    let start_barrier = Arc::new(Barrier::new(WORKERS));
+    let mut handles = Vec::with_capacity(WORKERS);
+
+    for _ in 0..WORKERS {
+        let barrier = Arc::clone(&start_barrier);
+        handles.push(thread::spawn(move || {
+            barrier.wait();
+            super::next_iat_millis()
+        }));
+    }
+
+    let mut values = Vec::with_capacity(WORKERS);
+    for handle in handles {
+        values.push(handle.join().expect("thread join").expect("timestamp"));
+    }
+
+    let unique: HashSet<_> = values.iter().copied().collect();
+    assert_eq!(
+        unique.len(),
+        values.len(),
+        "timestamps must be unique even under concurrent calls"
+    );
+
+    let mut sorted = values.clone();
+    sorted.sort_unstable();
+    assert!(
+        sorted.windows(2).all(|w| w[1] > w[0]),
+        "concurrent results must remain strictly increasing: {:?}",
+        sorted
+    );
+}
+
 /// A minimal PKCS#8 private key PEM for tests. You can replace with your own fixture.
 /// This is intended only to exercise signing; the test does not verify the signature.
 const TEST_PKCS8_PRIVKEY_PEM: &str = include_str!("../../../tests/fixtures/id_rsa.pem");
+const TEST_PKCS8_ENCRYPTED_PEM: &str = include_str!("../../../tests/fixtures/id_rsa_encrypted.pem");
 
 /// Happy path: builds a JWT whose claims match Snowflake’s expectations.
 /// We assert:
 /// - `iss` contains UPPERCASE <ACCOUNT>.<USER>.SHA256:<fingerprint>
 /// - `sub` equals UPPERCASE <ACCOUNT>.<USER>
-/// - `exp - iat == jwt_exp_secs` and <= 3600
+/// - `exp - iat == jwt_exp_secs * 1000` (claims now use milliseconds)
 /// - `iat` ≈ now (allow small skew)
 #[test]
 fn generates_snowflake_style_jwt_claims() {
@@ -59,9 +107,11 @@ fn generates_snowflake_style_jwt_claims() {
         private_key_passphrase: None,
         public_key_fp: None,
         jwt_exp_secs: Some(exp_secs),
+        jwt_refresh_margin_secs: None,
+        retry_on_unauthorized: None,
     };
 
-    let t0 = now_secs();
+    let t0 = super::now_millis().unwrap();
 
     // Act
     let jwt = generate_assertion(&cfg).expect("should generate a JWT");
@@ -112,8 +162,8 @@ fn generates_snowflake_style_jwt_claims() {
     // Time math: exp - iat == jwt_exp_secs and <= 3600
     assert_eq!(
         exp.saturating_sub(iat),
-        exp_secs,
-        "exp - iat must equal jwt_exp_secs"
+        exp_secs * 1_000,
+        "exp - iat must equal jwt_exp_secs in milliseconds"
     );
     assert!(
         exp_secs <= 3600,
@@ -121,45 +171,26 @@ fn generates_snowflake_style_jwt_claims() {
     );
 
     // iat should be close to now (allow generous skew for CI)
-    let t1 = now_secs();
+    let t1 = super::now_millis().unwrap();
     assert!(
-        iat >= t0.saturating_sub(30) && iat <= t1.saturating_add(30),
+        iat >= t0.saturating_sub(30_000) && iat <= t1.saturating_add(30_000),
         "iat should be near 'now' (±30s); got {}, window [{}, {}]",
         iat,
-        t0.saturating_sub(30),
-        t1.saturating_add(30)
+        t0.saturating_sub(30_000),
+        t1.saturating_add(30_000)
     );
-}
-
-fn to_encrypted_pem(body: &str) -> String {
-    let mut out = String::with_capacity(body.len() + body.len() / 64 + 64);
-    out.push_str("-----BEGIN ENCRYPTED PRIVATE KEY-----\n");
-    for chunk in body.as_bytes().chunks(64) {
-        out.push_str(std::str::from_utf8(chunk).expect("valid base64 chunk"));
-        out.push('\n');
-    }
-    out.push_str("-----END ENCRYPTED PRIVATE KEY-----\n");
-    out
 }
 
 #[test]
 fn encrypted_pkcs8_with_passphrase_parses() {
     const PASSPHRASE: &str = "test-pass";
-    let mut rng = thread_rng();
-    let rsa = RsaPrivateKey::new(&mut rng, 2048).expect("keygen");
-    let encrypted = rsa
-        .to_pkcs8_encrypted_der(&mut rng, PASSPHRASE)
-        .expect("encrypt");
-    let pem_body = STANDARD.encode(encrypted.as_bytes());
-    let pem = to_encrypted_pem(&pem_body);
-
     let cfg = Config::from_values(
         "user",
         None,
         "acct",
         "https://example",
         None,
-        Some(pem),
+        Some(TEST_PKCS8_ENCRYPTED_PEM.to_string()),
         None,
         Some(PASSPHRASE.to_string()),
         None,
@@ -176,4 +207,74 @@ fn correctly_generates_fingerprint() {
     let pubkey = RsaPublicKey::from_public_key_der(&der).unwrap();
     let fp = "SHA256:xZx8qqibbh7x0CTGVPZNf3z463BMMn7vIoIxSUJQ/Bc=";
     assert_eq!(compute_fingerprint(&pubkey).unwrap(), fp);
+}
+
+fn config_with_exp_secs(exp: u64) -> Config {
+    Config {
+        user: "user".into(),
+        login: None,
+        account: "acct".into(),
+        url: "https://example".into(),
+        jwt_token: None,
+        private_key: Some(TEST_PKCS8_PRIVKEY_PEM.to_string()),
+        private_key_path: None,
+        private_key_passphrase: None,
+        public_key_fp: None,
+        jwt_exp_secs: Some(exp),
+        jwt_refresh_margin_secs: None,
+        retry_on_unauthorized: None,
+    }
+}
+
+#[test]
+fn clamps_short_expiry_and_warns_once() {
+    let cfg = config_with_exp_secs(10);
+
+    let (logs, jwt) = with_captured_logs(|| generate_assertion(&cfg).expect("jwt"));
+
+    let payload = decode_jwt_payload(&jwt);
+    let iat = payload.get("iat").and_then(|v| v.as_u64()).unwrap();
+    let exp = payload.get("exp").and_then(|v| v.as_u64()).unwrap();
+
+    assert_eq!(
+        exp.saturating_sub(iat),
+        30_000,
+        "short lifetimes should clamp to 30 seconds (milliseconds)"
+    );
+
+    let warn_logs: Vec<&String> = logs
+        .iter()
+        .filter(|line| line.contains("WARN") && line.to_lowercase().contains("clamp"))
+        .collect();
+    assert_eq!(
+        warn_logs.len(),
+        1,
+        "expected a single clamp warning, got: {:?}",
+        warn_logs
+    );
+}
+
+#[tokio::test]
+async fn refreshes_token_when_near_expiry() {
+    let cfg = config_with_exp_secs(60);
+    let mut ctx = JwtContext::new(&cfg, 30).expect("context");
+
+    // First call should produce a token we can reuse until margin threshold hit.
+    let first = ctx.ensure_valid(&cfg).expect("first token");
+
+    // Simulate time passage so remaining TTL drops below margin.
+    ctx.force_issued_at(super::now_millis().unwrap().saturating_sub(40_000));
+
+    let (logs, second) = with_captured_logs(|| ctx.ensure_valid(&cfg).expect("refresh token"));
+
+    assert_ne!(
+        first, second,
+        "token should refresh once below safety margin"
+    );
+    assert!(
+        logs.iter()
+            .any(|line| line.contains("INFO") && line.to_lowercase().contains("refresh")),
+        "refresh should emit informative log; got {:?}",
+        logs
+    );
 }

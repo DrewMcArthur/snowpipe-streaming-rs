@@ -37,7 +37,7 @@ struct Row { id: u64 }
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
   // config.json example below
   let cfg = Config::from_file("config.json")?;
-  let client = StreamingIngestClient::<Row>::new(
+  let mut client = StreamingIngestClient::<Row>::new(
     "svc-client", "DB", "SCHEMA", "PIPE", cfg,
   ).await?;
 
@@ -57,11 +57,7 @@ Example `config.json`:
   "user": "MY_USER",
   "account": "MY_ACCOUNT",
   "url": "https://my-account-host",
-  "jwt_token": "<optional, see Auth modes>",
-  "private_key": "<optional PEM, or use private_key_path>",
-  "private_key_path": "/path/to/private_key.pem",
-  "private_key_passphrase": "<optional for encrypted keys>",
-  "jwt_exp_secs": 60
+  "private_key_path": "/path/to/private_key.pem"
 }
 ```
 
@@ -80,11 +76,11 @@ std::fs::write(cfg_path, r#"{
   "user": "user",
   "account": "acct",
   "url": "http://127.0.0.1:12345", // wiremock server URI
-  "jwt_token": "jwt"
+  "private_key_path": "./tests/fixtures/id_rsa.pem"
 }"#)?;
 
 // Construct client using file config
-let client = StreamingIngestClient::<YourRow>::new(
+let mut client = StreamingIngestClient::<YourRow>::new(
     "test-client", "db", "schema", "pipe", Config::from_file(cfg_path)?
 ).await?;
 ```
@@ -100,11 +96,13 @@ Config fields (JSON file or env):
 - `user` (`SNOWFLAKE_USERNAME`) – Snowflake user identifier
 - `account` (`SNOWFLAKE_ACCOUNT`) – Snowflake account identifier
 - `url` (`SNOWFLAKE_URL`) – Control-plane base URL
-- `jwt_token` (`SNOWFLAKE_JWT_TOKEN`) – Optional; omit to enable programmatic token generation
+- `jwt_token` (`SNOWFLAKE_JWT_TOKEN`) – Optional/deprecated; omit to enable programmatic token generation (a warning is emitted when provided)
 - `private_key` (`SNOWFLAKE_PRIVATE_KEY`) – Optional PEM-encoded private key string
 - `private_key_path` (`SNOWFLAKE_PRIVATE_KEY_PATH`) – Optional path to private key PEM file
 - `private_key_passphrase` (`SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`) – Passphrase for encrypted PKCS#8 private keys
-- `jwt_exp_secs` (`SNOWFLAKE_JWT_EXP_SECS`) – Optional JWT lifetime in seconds (default 3600)
+- `jwt_exp_secs` (`SNOWFLAKE_JWT_EXP_SECS`) – Optional JWT lifetime in seconds; values are transparently clamped into `[30, 3600]`
+- `jwt_refresh_margin_secs` (`SNOWFLAKE_JWT_REFRESH_MARGIN_SECS`) – Optional safety margin (>= 30 and < effective JWT lifetime) that triggers proactive refresh
+- `retry_on_unauthorized` (`SNOWFLAKE_RETRY_ON_UNAUTHORIZED`) – Optional boolean (default `true`) controlling automatic 401 retries
 
 Example (programmatic):
 ```
@@ -122,7 +120,7 @@ use snowpipe_streaming::{Config, StreamingIngestClient};
 struct Row { id: u64 }
 
 # async fn run() -> Result<(), snowpipe_streaming::Error> {
-let client = StreamingIngestClient::<Row>::new(
+let mut client = StreamingIngestClient::<Row>::new(
   "svc-client",
   "DB",
   "SCHEMA",
@@ -140,6 +138,14 @@ Close semantics:
 - `StreamingIngestChannel::close()` polls until Snowflake reports commits for all appended rows.
 - Warnings emit every minute after the first, and by default it times out after 5 minutes with `Error::Timeout`.
 - You can override the timeout with `close_with_timeout(std::time::Duration::from_secs(30))`.
+
+## Automatic refresh & retry behavior
+
+- Control-plane JWTs are refreshed automatically when their remaining lifetime falls within the configured safety margin.
+- Configuration values outside supported ranges are transparently adjusted (e.g., `jwt_exp_secs` is clamped to `[30, 3600]`) with a warning so operators can spot misconfigurations.
+- The client retries **once** after receiving `401 Unauthorized` responses, regenerating tokens transparently. A second failure surfaces as `Error::Auth` with the response body for diagnostics.
+- `429 TOO MANY REQUESTS` responses trigger a warning and a fixed **2 second** back-off before retrying. Persistent throttling bubbles up as `Error::Http`.
+- Refresh, clamp, and retry decisions are logged via `tracing`, capturing remaining TTL, safety margins, and retry outcomes for observability.
 
 ## Batching and limits
 - `append_row(&T)` appends a single row.
