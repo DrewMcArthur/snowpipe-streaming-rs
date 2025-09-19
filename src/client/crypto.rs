@@ -9,6 +9,14 @@ use crate::{Config, Error};
 const MIN_EXP_SECS: u64 = 30;
 const MAX_EXP_SECS: u64 = 3600;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ClampResult {
+    /// Effective expiration requested after enforcing safety bounds.
+    effective: u64,
+    /// Original requested value when clamping occurred.
+    original: Option<u64>,
+}
+
 fn now_secs() -> Result<u64, Error> {
     Ok(SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -16,15 +24,18 @@ fn now_secs() -> Result<u64, Error> {
         .as_secs())
 }
 
-fn clamp_exp_secs(desired: Option<u64>) -> (u64, Option<u64>) {
-    let original = desired.unwrap_or(MAX_EXP_SECS);
-    let effective = original.clamp(MIN_EXP_SECS, MAX_EXP_SECS);
-    let clamped_from = if effective != original {
-        Some(original)
+fn clamp_exp_secs(desired: Option<u64>) -> ClampResult {
+    let requested = desired.unwrap_or(MAX_EXP_SECS);
+    let effective = requested.clamp(MIN_EXP_SECS, MAX_EXP_SECS);
+    let original = if effective != requested {
+        Some(requested)
     } else {
         None
     };
-    (effective, clamped_from)
+    ClampResult {
+        effective,
+        original,
+    }
 }
 
 /// Returns base64 encoded fingerprint of a public key derived from the RSA key.
@@ -107,11 +118,11 @@ pub(super) fn build_assertion(cfg: &Config, log_clamp: bool) -> Result<Assertion
         });
     }
 
-    let (lifetime_secs, clamped_from) = clamp_exp_secs(cfg.jwt_exp_secs);
-    if let Some(original) = clamped_from.filter(|_| log_clamp) {
+    let clamp = clamp_exp_secs(cfg.jwt_exp_secs);
+    if let Some(original) = clamp.original.filter(|_| log_clamp) {
         warn!(
             original_seconds = original,
-            effective_seconds = lifetime_secs,
+            effective_seconds = clamp.effective,
             "jwt_exp_secs outside [{MIN_EXP_SECS}, {MAX_EXP_SECS}] - clamped for safety"
         );
     }
@@ -127,7 +138,7 @@ pub(super) fn build_assertion(cfg: &Config, log_clamp: bool) -> Result<Assertion
     let user_norm = name.to_uppercase();
     let sub = format!("{}.{}", account_norm, user_norm);
     let iss = format!("{}.{}", sub, fingerprint);
-    let exp = now + lifetime_secs;
+    let exp = now + clamp.effective;
 
     #[derive(serde::Serialize)]
     struct Claims {
@@ -158,8 +169,8 @@ pub(super) fn build_assertion(cfg: &Config, log_clamp: bool) -> Result<Assertion
         token,
         issued_at: now,
         expires_at: exp,
-        lifetime_secs,
-        clamped_from,
+        lifetime_secs: clamp.effective,
+        clamped_from: clamp.original,
     })
 }
 
@@ -180,7 +191,8 @@ impl JwtContext {
                 "jwt_refresh_margin_secs must be at least {MIN_EXP_SECS} seconds (got {refresh_margin_secs})"
             )));
         }
-        let (lifetime_secs, _clamped_from) = clamp_exp_secs(cfg.jwt_exp_secs);
+        let clamp = clamp_exp_secs(cfg.jwt_exp_secs);
+        let lifetime_secs = clamp.effective;
         if refresh_margin_secs >= lifetime_secs {
             return Err(Error::Config(format!(
                 "refresh margin ({refresh_margin_secs}) must be less than effective JWT lifetime ({lifetime_secs})"
