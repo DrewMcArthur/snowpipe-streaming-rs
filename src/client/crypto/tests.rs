@@ -5,6 +5,9 @@ use base64::engine::general_purpose::{self, URL_SAFE_NO_PAD};
 use pkcs8::DecodePublicKey;
 use rsa::RsaPublicKey;
 use serde_json::Value;
+use std::collections::HashSet;
+use std::sync::{Arc, Barrier};
+use std::thread;
 
 use crate::client::crypto::{JwtContext, build_assertion, compute_fingerprint};
 use crate::tests::test_support::with_captured_logs;
@@ -22,6 +25,54 @@ fn decode_jwt_payload(jwt: &str) -> Value {
         .decode(payload_b64.as_bytes())
         .expect("payload must be valid base64url (no padding)");
     serde_json::from_slice::<Value>(&bytes).expect("payload must be valid JSON")
+}
+
+#[test]
+fn next_iat_is_strictly_increasing() {
+    let first = super::next_iat_millis().expect("first timestamp");
+    let second = super::next_iat_millis().expect("second timestamp");
+
+    assert!(
+        second > first,
+        "subsequent calls must advance: first={}, second={}",
+        first,
+        second
+    );
+}
+
+#[test]
+fn next_iat_is_unique_across_threads() {
+    const WORKERS: usize = 32;
+    let start_barrier = Arc::new(Barrier::new(WORKERS));
+    let mut handles = Vec::with_capacity(WORKERS);
+
+    for _ in 0..WORKERS {
+        let barrier = Arc::clone(&start_barrier);
+        handles.push(thread::spawn(move || {
+            barrier.wait();
+            super::next_iat_millis()
+        }));
+    }
+
+    let mut values = Vec::with_capacity(WORKERS);
+    for handle in handles {
+        values.push(handle.join().expect("thread join").expect("timestamp"));
+    }
+
+    let unique: HashSet<_> = values.iter().copied().collect();
+    assert_eq!(
+        unique.len(),
+        values.len(),
+        "timestamps must be unique even under concurrent calls"
+    );
+
+    let mut sorted = values.clone();
+    sorted.sort_unstable();
+    assert!(
+        sorted.windows(2).all(|w| w[1] > w[0]),
+        "concurrent results must remain strictly increasing: {:?}",
+        sorted
+    );
 }
 
 /// A minimal PKCS#8 private key PEM for tests. You can replace with your own fixture.

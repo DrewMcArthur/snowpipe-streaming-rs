@@ -27,6 +27,12 @@ fn now_millis() -> Result<u64, Error> {
         .map_err(|_| Error::Config("system time overflowed u64".into()))
 }
 
+/// Returns a strictly increasing millisecond timestamp suitable for JWT `iat` claims.
+///
+/// Each call observes the current wall-clock time but guarantees the result is
+/// greater than any previously returned value. This protects against coarse
+/// timer resolution, concurrent callers, and minor clock skew while avoiding the
+/// need for heavier synchronization primitives.
 fn next_iat_millis() -> Result<u64, Error> {
     static LAST_IAT: AtomicU64 = AtomicU64::new(0);
     let now = now_millis()?;
