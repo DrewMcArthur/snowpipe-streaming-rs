@@ -17,8 +17,6 @@ use crate::{
 const USER_AGENT: &str = "snowpipe-streaming-rust-sdk/0.1.0";
 const DEFAULT_REFRESH_MARGIN_SECS: u64 = 30;
 const BACKOFF_DELAY_SECS: u64 = 2;
-/// Buffer window after invalidating a JWT to allow Snowflake to register the refresh.
-const JWT_INVALIDATION_DELAY_MS: u64 = 1_100;
 
 struct TokenRequestPolicy<
     FetchFn,
@@ -285,7 +283,6 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             fetch_token: || async { self.ensure_valid_jwt().await },
             refresh_token: || async {
                 self.invalidate_jwt().await;
-                sleep(Duration::from_millis(JWT_INVALIDATION_DELAY_MS)).await;
                 Ok(())
             },
             unauthorized_retry_log: || {

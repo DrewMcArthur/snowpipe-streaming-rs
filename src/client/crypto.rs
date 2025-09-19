@@ -1,6 +1,7 @@
 use base64::Engine as _;
 use pkcs8::{DecodePrivateKey as _, EncodePublicKey as _};
 use rsa::pkcs1::{DecodeRsaPrivateKey as _, EncodeRsaPrivateKey as _};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn};
 
@@ -17,11 +18,26 @@ struct ClampResult {
     original: Option<u64>,
 }
 
-fn now_secs() -> Result<u64, Error> {
-    Ok(SystemTime::now()
+fn now_millis() -> Result<u64, Error> {
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| Error::Config(format!("Time error: {e}")))?
-        .as_secs())
+        .as_millis()
+        .try_into()
+        .map_err(|_| Error::Config("system time overflowed u64".into()))
+}
+
+fn next_iat_millis() -> Result<u64, Error> {
+    static LAST_IAT: AtomicU64 = AtomicU64::new(0);
+    let now = now_millis()?;
+    let mut prev = LAST_IAT.load(Ordering::Relaxed);
+    loop {
+        let candidate = now.max(prev.saturating_add(1));
+        match LAST_IAT.compare_exchange(prev, candidate, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return Ok(candidate),
+            Err(actual) => prev = actual,
+        }
+    }
 }
 
 fn clamp_exp_secs(desired: Option<u64>) -> ClampResult {
@@ -107,12 +123,12 @@ pub(super) struct AssertionBundle {
 pub(super) fn build_assertion(cfg: &Config, log_clamp: bool) -> Result<AssertionBundle, Error> {
     let private_key = cfg.private_key()?;
     let prefix = "TEST://assertion:";
-    let now = now_secs()?;
+    let now = next_iat_millis()?;
     if let Some(rest) = private_key.strip_prefix(prefix) {
         return Ok(AssertionBundle {
             token: rest.to_string(),
             issued_at: now,
-            expires_at: now + MIN_EXP_SECS,
+            expires_at: now + MIN_EXP_SECS * 1_000,
             lifetime_secs: MIN_EXP_SECS,
             clamped_from: None,
         });
@@ -138,7 +154,7 @@ pub(super) fn build_assertion(cfg: &Config, log_clamp: bool) -> Result<Assertion
     let user_norm = name.to_uppercase();
     let sub = format!("{}.{}", account_norm, user_norm);
     let iss = format!("{}.{}", sub, fingerprint);
-    let exp = now + clamp.effective;
+    let exp = now + clamp.effective * 1_000;
 
     #[derive(serde::Serialize)]
     struct Claims {
@@ -211,19 +227,20 @@ impl JwtContext {
     }
 
     pub(crate) fn ensure_valid(&mut self, cfg: &Config) -> Result<String, Error> {
-        let now = now_secs()?;
+        let now = now_millis()?;
         let needs_refresh = match self.token {
             None => true,
             Some(_) => {
                 let remaining = self.expires_at.saturating_sub(now);
-                if remaining <= self.refresh_margin_secs {
+                if remaining <= self.refresh_margin_secs * 1_000 {
+                    let remaining_secs = remaining / 1_000;
                     let should_log = match &self.last_refresh_warning {
                         Some(ts) => ts.elapsed() >= Duration::from_secs(5),
                         None => true,
                     };
                     if should_log {
                         info!(
-                            remaining_seconds = remaining,
+                            remaining_seconds = remaining_secs,
                             margin_seconds = self.refresh_margin_secs,
                             "refreshing JWT because remaining lifetime is within safety margin"
                         );
@@ -247,7 +264,7 @@ impl JwtContext {
             self.lifetime_secs = bundle.lifetime_secs;
         } else {
             debug!(
-                remaining_seconds = self.expires_at.saturating_sub(now),
+                remaining_seconds = self.expires_at.saturating_sub(now) / 1_000,
                 "reusing cached JWT"
             );
         }
@@ -262,7 +279,7 @@ impl JwtContext {
     #[cfg(test)]
     pub(crate) fn force_issued_at(&mut self, issued_at: u64) {
         self.issued_at = issued_at;
-        self.expires_at = issued_at + self.lifetime_secs;
+        self.expires_at = issued_at + self.lifetime_secs * 1_000;
     }
 
     pub(crate) fn invalidate(&mut self) {

@@ -33,7 +33,7 @@ const TEST_PKCS8_PRIVKEY_PEM: &str = include_str!("../../../tests/fixtures/id_rs
 /// We assert:
 /// - `iss` contains UPPERCASE <ACCOUNT>.<USER>.SHA256:<fingerprint>
 /// - `sub` equals UPPERCASE <ACCOUNT>.<USER>
-/// - `exp - iat == jwt_exp_secs` and <= 3600
+/// - `exp - iat == jwt_exp_secs * 1000` (claims now use milliseconds)
 /// - `iat` ≈ now (allow small skew)
 #[test]
 fn generates_snowflake_style_jwt_claims() {
@@ -60,7 +60,7 @@ fn generates_snowflake_style_jwt_claims() {
         retry_on_unauthorized: None,
     };
 
-    let t0 = super::now_secs().unwrap();
+    let t0 = super::now_millis().unwrap();
 
     // Act
     let jwt = generate_assertion(&cfg).expect("should generate a JWT");
@@ -111,8 +111,8 @@ fn generates_snowflake_style_jwt_claims() {
     // Time math: exp - iat == jwt_exp_secs and <= 3600
     assert_eq!(
         exp.saturating_sub(iat),
-        exp_secs,
-        "exp - iat must equal jwt_exp_secs"
+        exp_secs * 1_000,
+        "exp - iat must equal jwt_exp_secs in milliseconds"
     );
     assert!(
         exp_secs <= 3600,
@@ -120,13 +120,13 @@ fn generates_snowflake_style_jwt_claims() {
     );
 
     // iat should be close to now (allow generous skew for CI)
-    let t1 = super::now_secs().unwrap();
+    let t1 = super::now_millis().unwrap();
     assert!(
-        iat >= t0.saturating_sub(30) && iat <= t1.saturating_add(30),
+        iat >= t0.saturating_sub(30_000) && iat <= t1.saturating_add(30_000),
         "iat should be near 'now' (±30s); got {}, window [{}, {}]",
         iat,
-        t0.saturating_sub(30),
-        t1.saturating_add(30)
+        t0.saturating_sub(30_000),
+        t1.saturating_add(30_000)
     );
 }
 
@@ -204,7 +204,11 @@ fn clamps_short_expiry_and_warns_once() {
     let iat = payload.get("iat").and_then(|v| v.as_u64()).unwrap();
     let exp = payload.get("exp").and_then(|v| v.as_u64()).unwrap();
 
-    assert_eq!(exp - iat, 30, "short lifetimes should clamp to 30 seconds");
+    assert_eq!(
+        exp.saturating_sub(iat),
+        30_000,
+        "short lifetimes should clamp to 30 seconds (milliseconds)"
+    );
 
     let warn_logs: Vec<&String> = logs
         .iter()
@@ -227,8 +231,7 @@ async fn refreshes_token_when_near_expiry() {
     let first = ctx.ensure_valid(&cfg).expect("first token");
 
     // Simulate time passage so remaining TTL drops below margin.
-    ctx.force_issued_at(super::now_secs().unwrap().saturating_sub(40));
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    ctx.force_issued_at(super::now_millis().unwrap().saturating_sub(40_000));
 
     let (logs, second) = with_captured_logs(|| ctx.ensure_valid(&cfg).expect("refresh token"));
 
