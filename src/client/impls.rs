@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -119,7 +120,7 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         }
     }
 
-    async fn get_scoped_token(&mut self) -> Result<(), Error> {
+    async fn get_scoped_token(&self) -> Result<(), Error> {
         let scope = self
             .ingest_host
             .as_ref()
@@ -174,37 +175,62 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         }
     }
 
-    async fn send_with_jwt<F>(&self, builder: F) -> Result<reqwest::Response, Error>
+    async fn send_with_token_strategy<
+        F,
+        FetchFn,
+        FetchFut,
+        RefreshFn,
+        RefreshFut,
+        BuildAuthErrFn,
+        RetryLogFn,
+        FailLogFn,
+        RateLogFn,
+    >(
+        &self,
+        builder: F,
+        mut fetch_token: FetchFn,
+        mut refresh_token: RefreshFn,
+        allow_unauthorized_retry: bool,
+        unauthorized_retry_log: RetryLogFn,
+        unauthorized_fail_log: FailLogFn,
+        rate_limit_log: RateLogFn,
+        build_auth_error: BuildAuthErrFn,
+    ) -> Result<reqwest::Response, Error>
     where
         F: Fn(&Client, &str) -> reqwest::RequestBuilder,
+        FetchFn: FnMut() -> FetchFut,
+        FetchFut: Future<Output = Result<String, Error>>,
+        RefreshFn: FnMut() -> RefreshFut,
+        RefreshFut: Future<Output = Result<(), Error>>,
+        BuildAuthErrFn: Fn(String) -> Error,
+        RetryLogFn: Fn(),
+        FailLogFn: Fn(),
+        RateLogFn: Fn(u64),
     {
         let mut unauthorized_retry = false;
         let mut rate_limit_retry = false;
 
         loop {
-            let token = self.ensure_valid_jwt().await?;
+            let token = fetch_token().await?;
+
             let response = builder(&self.http_client, &token).send().await?;
             let status = response.status();
 
             if status == StatusCode::UNAUTHORIZED {
                 let body = response.text().await.unwrap_or_default();
-                if self.retry_on_unauthorized && !unauthorized_retry {
-                    warn!("received 401 from Snowflake; refreshing JWT and retrying");
-                    self.invalidate_jwt().await;
+                if allow_unauthorized_retry && !unauthorized_retry {
+                    unauthorized_retry_log();
+                    refresh_token().await?;
                     unauthorized_retry = true;
-                    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
                     continue;
                 }
-                warn!("received 401 from Snowflake after retry; surfacing authentication failure");
-                return Err(Error::Auth(format!("401 Unauthorized: {}", body)));
+                unauthorized_fail_log();
+                return Err(build_auth_error(body));
             }
 
             if status == StatusCode::TOO_MANY_REQUESTS {
                 if !rate_limit_retry {
-                    warn!(
-                        "received 429 TOO MANY REQUESTS; sleeping {} seconds before retry",
-                        self.backoff_delay.as_secs()
-                    );
+                    rate_limit_log(self.backoff_delay.as_secs());
                     sleep(self.backoff_delay).await;
                     rate_limit_retry = true;
                     continue;
@@ -217,8 +243,34 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
         }
     }
 
+    async fn send_with_jwt<F>(&self, builder: F) -> Result<reqwest::Response, Error>
+    where
+        F: Fn(&Client, &str) -> reqwest::RequestBuilder,
+    {
+        self.send_with_token_strategy(
+            builder,
+            || async { self.ensure_valid_jwt().await },
+            || async {
+                self.invalidate_jwt().await;
+                sleep(std::time::Duration::from_millis(1100)).await;
+                Ok(())
+            },
+            self.retry_on_unauthorized,
+            || warn!("received 401 from Snowflake; refreshing JWT and retrying"),
+            || warn!("received 401 from Snowflake after retry; surfacing authentication failure"),
+            |delay| {
+                warn!(
+                    "received 429 TOO MANY REQUESTS; sleeping {} seconds before retry",
+                    delay
+                );
+            },
+            |body| Error::Auth(format!("401 Unauthorized: {}", body)),
+        )
+        .await
+    }
+
     pub(crate) async fn send_with_scoped_token<F>(
-        &mut self,
+        &self,
         builder: F,
     ) -> Result<reqwest::Response, Error>
     where
@@ -228,48 +280,27 @@ impl<R: Serialize + Clone> StreamingIngestClient<R> {
             self.get_scoped_token().await?;
         }
 
-        let mut unauthorized_retry = false;
-        let mut rate_limit_retry = false;
-
-        loop {
-            let token = {
+        self.send_with_token_strategy(
+            builder,
+            || async {
                 let guard = self.scoped_token.lock().await;
-                guard
+                Ok(guard
                     .clone()
-                    .expect("scoped token should be available before request")
-            };
-
-            let response = builder(&self.http_client, &token).send().await?;
-            let status = response.status();
-
-            if status == StatusCode::UNAUTHORIZED {
-                let body = response.text().await.unwrap_or_default();
-                if !unauthorized_retry {
-                    warn!("scoped token rejected with 401; refreshing scoped token and retrying");
-                    self.get_scoped_token().await?;
-                    unauthorized_retry = true;
-                    continue;
-                }
-                warn!("scoped token rejected again after retry; surfacing authentication failure");
-                return Err(Error::Auth(format!("Scoped token unauthorized: {}", body)));
-            }
-
-            if status == StatusCode::TOO_MANY_REQUESTS {
-                if !rate_limit_retry {
-                    warn!(
-                        "received 429 from ingest endpoint; sleeping {} seconds before retry",
-                        self.backoff_delay.as_secs()
-                    );
-                    sleep(self.backoff_delay).await;
-                    rate_limit_retry = true;
-                    continue;
-                }
-                let body = response.text().await.unwrap_or_default();
-                return Err(Error::Http(status, body));
-            }
-
-            return Ok(response);
-        }
+                    .expect("scoped token should be available before request"))
+            },
+            || async { self.get_scoped_token().await },
+            true,
+            || warn!("scoped token rejected with 401; refreshing scoped token and retrying"),
+            || warn!("scoped token rejected again after retry; surfacing authentication failure"),
+            |delay| {
+                warn!(
+                    "received 429 from ingest endpoint; sleeping {} seconds before retry",
+                    delay
+                );
+            },
+            |body| Error::Auth(format!("Scoped token unauthorized: {}", body)),
+        )
+        .await
     }
 
     pub async fn open_channel(
