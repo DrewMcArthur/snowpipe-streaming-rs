@@ -69,7 +69,10 @@ async fn client_must_not_call_oauth2_token_when_private_key_provided() {
 
     // Under correct behavior, client creation should succeed without calling /oauth2/token.
     // Current implementation calls /oauth2/token and should therefore fail this assertion.
-    assert!(res.is_ok(), "client should initialize without /oauth2/token calls");
+    assert!(
+        res.is_ok(),
+        "client should initialize without /oauth2/token calls"
+    );
 }
 
 #[tokio::test]
@@ -109,5 +112,8 @@ async fn discovery_uses_bearer_with_keypair_header() {
     )
     .await;
 
-    assert!(res.is_ok(), "discovery must use Bearer + KEYPAIR_JWT header scheme");
+    assert!(
+        res.is_ok(),
+        "discovery must use Bearer + KEYPAIR_JWT header scheme"
+    );
 }

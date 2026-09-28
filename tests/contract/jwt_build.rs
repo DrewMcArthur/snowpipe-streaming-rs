@@ -17,11 +17,12 @@ async fn encrypted_pem_without_passphrase_is_error() {
         None,
         Some(60),
     );
-    let res = StreamingIngestClient::<serde_json::Value>::new(
-        "c", "db", "schema", "pipe", cfg,
-    )
-    .await;
-    assert!(res.is_err(), "expected error for encrypted PEM without passphrase");
+    let res =
+        StreamingIngestClient::<serde_json::Value>::new("c", "db", "schema", "pipe", cfg).await;
+    assert!(
+        res.is_err(),
+        "expected error for encrypted PEM without passphrase"
+    );
 }
 
 #[tokio::test]
@@ -39,10 +40,7 @@ async fn malformed_key_is_error() {
         None,
         Some(60),
     );
-    let res = StreamingIngestClient::<serde_json::Value>::new(
-        "c", "db", "schema", "pipe", cfg,
-    )
-    .await;
+    let res =
+        StreamingIngestClient::<serde_json::Value>::new("c", "db", "schema", "pipe", cfg).await;
     assert!(res.is_err(), "expected error for malformed key");
 }
-
