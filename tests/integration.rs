@@ -9,6 +9,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use snowpipe_streaming::{Config, StreamingIngestClient};
 
+mod contract;
 mod unit;
 
 #[derive(Serialize, Clone)]

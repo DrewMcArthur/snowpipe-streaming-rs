@@ -44,8 +44,8 @@ async fn client_must_not_call_oauth2_token_when_private_key_provided() {
         .mount(&server)
         .await;
 
-    // Config file without jwt_token, with private key (test assertion shortcut)
-    let pem = "TEST://assertion:dummy-assertion";
+    // Config file without jwt_token, with a private key that can generate a JWT.
+    let pem = include_str!("../fixtures/id_rsa.pem");
     let cfg = serde_json::json!({
         "user": "user",
         "account": "acct",
@@ -69,7 +69,10 @@ async fn client_must_not_call_oauth2_token_when_private_key_provided() {
 
     // Under correct behavior, client creation should succeed without calling /oauth2/token.
     // Current implementation calls /oauth2/token and should therefore fail this assertion.
-    assert!(res.is_ok(), "client should initialize without /oauth2/token calls");
+    assert!(
+        res.is_ok(),
+        "client should initialize without /oauth2/token calls"
+    );
 }
 
 #[tokio::test]
@@ -85,6 +88,12 @@ async fn discovery_uses_bearer_with_keypair_header() {
             "KEYPAIR_JWT",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(server.uri()))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("scoped-token"))
         .mount(&server)
         .await;
 
@@ -109,5 +118,8 @@ async fn discovery_uses_bearer_with_keypair_header() {
     )
     .await;
 
-    assert!(res.is_ok(), "discovery must use Bearer + KEYPAIR_JWT header scheme");
+    assert!(
+        res.is_ok(),
+        "discovery must use Bearer + KEYPAIR_JWT header scheme"
+    );
 }
