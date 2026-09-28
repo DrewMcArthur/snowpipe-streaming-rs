@@ -44,8 +44,8 @@ async fn client_must_not_call_oauth2_token_when_private_key_provided() {
         .mount(&server)
         .await;
 
-    // Config file without jwt_token, with private key (test assertion shortcut)
-    let pem = "TEST://assertion:dummy-assertion";
+    // Config file without jwt_token, with a private key that can generate a JWT.
+    let pem = include_str!("../fixtures/id_rsa.pem");
     let cfg = serde_json::json!({
         "user": "user",
         "account": "acct",
@@ -88,6 +88,12 @@ async fn discovery_uses_bearer_with_keypair_header() {
             "KEYPAIR_JWT",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(server.uri()))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("scoped-token"))
         .mount(&server)
         .await;
 
